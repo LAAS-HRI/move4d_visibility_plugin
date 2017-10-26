@@ -12,8 +12,11 @@ class VisibilityCell : public API::TwoDCell
 
 public:
     VisibilityCell();
+    VisibilityCell(int i, Eigen::Vector2d corner, API::TwoDGrid *grid);
     VisibilityCell(int i, Eigen::Vector2d corner, API::TwoDGrid *grid, const std::map<Robot *, double> &visibilities);
     
+    void setVisibilities(std::map<Robot *, double> visibilities);
+    void setVisibility(Robot *r,double vis);
     double visibility(Robot *r);
 private:
     std::map<Robot*,double> _visibilities;
