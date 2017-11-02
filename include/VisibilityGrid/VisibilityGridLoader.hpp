@@ -6,6 +6,8 @@
 
 namespace move4d {
 
+class VisibilityGrid;
+
 class VisibilityGridLoader : public move4d::ModuleBase
 {
     MOVE3D_STATIC_LOGGER;
@@ -15,9 +17,12 @@ public:
     virtual ~VisibilityGridLoader();
     static std::string name(){return "VisibilityGridLoader";}
 
-    virtual void run() override;
+    virtual void initialize() override;
+
+    VisibilityGrid *grid() const;
 
 private:
+    VisibilityGrid *_grid;
     static VisibilityGridLoader *__instance;
 };
 

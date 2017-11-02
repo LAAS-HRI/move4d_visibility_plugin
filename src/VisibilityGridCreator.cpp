@@ -49,7 +49,7 @@ void VisibilityGridCreator::computeVisibilities()
         for(double theta=0.;theta<M_PI*2;theta+=step){
             Ogre::Vector3 d(cos(theta),sin(theta),0);
             Robot *r=base->raycastRobot(p,d);
-            if(r)
+            if(r && r->getName().find("SIGN")!=std::string::npos)
                 vis[r]+=1./nb_step_max;
         }
         cell->setVisibilities(std::move(vis));

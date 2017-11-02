@@ -39,6 +39,7 @@ set(SRCS
     src/VisibilityGridCreator.cpp
     src/VisibilityGridLoader.cpp
     src/create_entities.cpp
+    src/VisibilityPlanner.cpp
 )
 
 add_library(${PROJECT_NAME} SHARED ${SRCS})
