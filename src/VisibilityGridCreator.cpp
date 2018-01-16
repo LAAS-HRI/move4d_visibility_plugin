@@ -1,6 +1,8 @@
 #include "VisibilityGrid/VisibilityGridCreator.hpp"
 #include "VisibilityGrid/VisibilityGrid.hpp"
 
+#include <move4d-gui/common/tools/VisibilityEngine.hpp>
+
 #include <move4d/API/project.hpp>
 #include <move4d/API/Graphic/DrawablePool.hpp>
 #include <move4d-gui/common/OgreBase.hpp>
@@ -32,28 +34,53 @@ VisibilityGridCreator::~VisibilityGridCreator()
 
 void VisibilityGridCreator::computeVisibilities()
 {
-    MoveOgre::OgreBase *base=MoveOgre::OgreBase::getInstance();
+    MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(360.));
+    double nb_step_max = visibEngine.getPixelPerDegree() * 20;
+    nb_step_max *= nb_step_max;
+    visibEngine.prepareScene();
     for(unsigned int i=0;i<_grid->getNumberOfCells();++i){
         VisibilityCell *cell=dynamic_cast<VisibilityCell*>(_grid->getCell(i));
         Eigen::Vector2d corner = cell->getCorner();
         std::map<Robot*,double> vis;
-
-        const uint nb_step=360*2; //.5deg step
-        const uint nb_step_max = 20; //cost = 1 for x deg in the fov
-        const double step=M_PI*2/nb_step;
-        Ogre::Vector3 p;
+        Eigen::Vector3d p;
         p[0]=corner[0] + _grid->getCellSize()[0]/2;
         p[1]=corner[1] + _grid->getCellSize()[1]/2;
         p[2]=1.5;
+        Eigen::Affine3d transform{Eigen::Translation3d(p)};
 
-        for(double theta=0.;theta<M_PI*2;theta+=step){
-            Ogre::Vector3 d(cos(theta),sin(theta),0);
-            Robot *r=base->raycastRobot(p,d);
-            if(r && r->getName().find("SIGN")!=std::string::npos)
-                vis[r]+=1./nb_step_max;
+        visibEngine.computeVisibilityFrom(transform);
+
+        for(auto p : visibEngine.getVisibilityCounts()){
+            vis[p.first] = p.second /  nb_step_max;
         }
         cell->setVisibilities(std::move(vis));
+
+
     }
+    visibEngine.finish();
+
+    //MoveOgre::OgreBase *base=MoveOgre::OgreBase::getInstance();
+    //for(unsigned int i=0;i<_grid->getNumberOfCells();++i){
+    //    VisibilityCell *cell=dynamic_cast<VisibilityCell*>(_grid->getCell(i));
+    //    Eigen::Vector2d corner = cell->getCorner();
+    //    std::map<Robot*,double> vis;
+
+    //    const uint nb_step=360*2; //.5deg step
+    //    const uint nb_step_max = 20; //cost = 1 for x deg in the fov
+    //    const double step=M_PI*2/nb_step;
+    //    Ogre::Vector3 p;
+    //    p[0]=corner[0] + _grid->getCellSize()[0]/2;
+    //    p[1]=corner[1] + _grid->getCellSize()[1]/2;
+    //    p[2]=1.5;
+
+    //    for(double theta=0.;theta<M_PI*2;theta+=step){
+    //        Ogre::Vector3 d(cos(theta),sin(theta),0);
+    //        Robot *r=base->raycastRobot(p,d);
+    //        if(r && r->getName().find("SIGN")!=std::string::npos)
+    //            vis[r]+=1./nb_step_max;
+    //    }
+    //    cell->setVisibilities(std::move(vis));
+    //}
 }
 
 void VisibilityGridCreator::writeGridsToFile(const std::string &name){
@@ -89,15 +116,15 @@ void VisibilityGridCreator::writeGridsToFile(const std::string &name){
 void VisibilityGridCreator::run()
 {
     cout<<"VisibilityModule::run()"<<endl;
-    for(int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
-        MoveOgre::Robot *r=dynamic_cast<MoveOgre::Robot*>(global_Project->getActiveScene()->getRobot(i));
-        if(r->getName().find("SIGN") != std::string::npos){
-            Ogre::SceneNode *n=r->getRobotNode();
-            createOgreEntities(MoveOgre::OgreBase::getInstance()->getSceneMgr(),r,n);
-        }
-    }
+    //for(int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
+    //    MoveOgre::Robot *r=dynamic_cast<MoveOgre::Robot*>(global_Project->getActiveScene()->getRobot(i));
+    //    if(r->getName().find("SIGN") != std::string::npos){
+    //        Ogre::SceneNode *n=r->getRobotNode();
+    //        createOgreEntities(MoveOgre::OgreBase::getInstance()->getSceneMgr(),r,n);
+    //    }
+    //}
 
-    MoveOgre::OgreBase::getInstance()->renderOneFrame();
+    //MoveOgre::OgreBase::getInstance()->renderOneFrame();
 
     _grid = new VisibilityGrid(0.3,global_Project->getActiveScene()->getBounds());
     _grid->createAllCells();
@@ -106,7 +133,7 @@ void VisibilityGridCreator::run()
 
     for(unsigned int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
         Robot *r= global_Project->getActiveScene()->getRobot(i);
-        Graphic::DrawablePool::sAdd2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid("Vis"+r->getName(),_grid->matrix(r),_grid->getCellSize(),_grid->getOriginCorner())));
+        Graphic::DrawablePool::sAddDrawable2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid{"Vis"+r->getName(),_grid->matrix(r),_grid->getCellSize(),_grid->getOriginCorner()}));
     }
 }
 }
