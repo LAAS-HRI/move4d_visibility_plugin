@@ -33,6 +33,10 @@ find_package(move4d-gui REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+file(GLOB_RECURSE HDRS
+    "include/*.hpp"
+)
+
 set(SRCS
     src/VisibilityGrid.cpp
     src/VisibilityCell.cpp
@@ -40,9 +44,10 @@ set(SRCS
     src/VisibilityGridLoader.cpp
     src/create_entities.cpp
     src/VisibilityPlanner.cpp
+    src/PointingPlanner.cpp
 )
 
-add_library(${PROJECT_NAME} SHARED ${SRCS})
+add_library(${PROJECT_NAME} SHARED ${SRCS} ${HDRS})
 target_link_libraries(${PROJECT_NAME} move4d ${LIBS} move3d move4d-gui-common ${OGRE_LIBRARIES})
 
 add_executable(test src/test.cpp)

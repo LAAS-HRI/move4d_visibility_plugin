@@ -76,7 +76,7 @@ inline VisibilityCell *cast(API::TwoDCell *c){return dynamic_cast<VisibilityCell
 void VisibilityPlanner::run()
 {
     VisibilityGrid *grid=dynamic_cast<VisibilityGridLoader*>(ModuleRegister::getInstance()->module(VisibilityGridLoader::name()))->grid();
-    API::TwoDCostGrid *costgrid=new API::TwoDCostGrid(grid->getSize(),global_Project->getActiveScene()->getBounds());
+    API::TwoDCostGrid *costgrid=new API::TwoDCostGrid(grid->getCellSize()[0],global_Project->getActiveScene()->getBounds());
     costgrid->createAllCells();
 
 
@@ -124,7 +124,7 @@ void VisibilityPlanner::run()
             cell=best_neig;
         }
     }
-    move4d::Graphic::DrawablePool::sAdd2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid("VisPlanner",costgrid->matrix(),costgrid->getCellSize(),costgrid->getOriginCorner())));
+    move4d::Graphic::DrawablePool::sAddDrawable2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid{"VisPlanner",costgrid->matrix(),costgrid->getCellSize(),costgrid->getOriginCorner()}));
 
 }
 

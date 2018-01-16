@@ -40,7 +40,7 @@ void VisibilityGridLoader::initialize()
         std::vector<double> envsize=global_Project->getActiveScene()->getBounds();
         envsize[1]=envsize[0]+cellsize[0]*dim[0];
         envsize[3]=envsize[2]+cellsize[1]*dim[1];
-        _grid = new VisibilityGrid(dim,envsize);
+        _grid = new VisibilityGrid(cellsize[0],envsize);
         M3D_ASSERT(_grid->getCellSize() == cellsize)
         _grid->createAllCells();
         M3D_TRACE("created grid of size "<<_grid->getSize().transpose()<<" origin: "<<_grid->getOriginCorner().transpose());
@@ -51,7 +51,7 @@ void VisibilityGridLoader::initialize()
                 double v=(*it)[i].asDouble();
                 dynamic_cast<VisibilityCell*>(_grid->getCell(i))->setVisibility(r,(*it)[i].asDouble());
             }
-            Graphic::DrawablePool::sAdd2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid("Vis"+r->getName(),_grid->matrix(r),_grid->getCellSize(),_grid->getOriginCorner())));
+            Graphic::DrawablePool::sAddDrawable2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid{"Vis"+r->getName(),_grid->matrix(r),_grid->getCellSize(),_grid->getOriginCorner()}));
             M3D_TRACE("mat "<<r->getName()<<"\n"<<_grid->matrix(r));
         }
     }else{

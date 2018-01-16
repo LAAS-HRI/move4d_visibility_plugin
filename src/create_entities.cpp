@@ -5,8 +5,8 @@
 #include <move4d-gui/common/Robot.hpp>
 
 #undef QT_LIBRARY
-#include <libmove3d/include/P3d-pkg.h>
-#include <libmove3d/include/Graphic-pkg.h>
+#include <libmove3d/P3d-pkg.h>
+#include <libmove3d/Graphic-pkg.h>
 
 Ogre::SceneNode *createOgreEntities(Ogre::SceneManager *sceneManager, MoveOgre::Robot *robot, Ogre::SceneNode *scNodeRobot)
 {

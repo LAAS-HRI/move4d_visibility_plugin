@@ -19,7 +19,7 @@ public:
     void setVisibility(Robot *r,double vis);
     double visibility(Robot *r);
 private:
-    std::map<Robot*,double> _visibilities;
+    std::map<Robot*,double> _visibilities; // something between 0 (not visible) and 1+ (visible)
 
 };
 }//namespace move4d
