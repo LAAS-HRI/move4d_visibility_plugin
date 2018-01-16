@@ -105,222 +105,26 @@ struct CompareCellPtr
 struct PlanningData
 {
 public:
-    Cell *createCell(Grid::ArrayCoord coord,Grid::SpaceCoord pos){
-        Cell *cell=new Cell(coord,pos);
-        cell->col = 0;
-        computeCost(cell);
-        return cell;
-    }
-    void setRobots(Robot *a,Robot *b, Cell *cell){
-        RobotState qa,qb;
-        qa=*a->getCurrentPos();
-        qb=*b->getCurrentPos();
-        for(uint i=0;i<2;++i){
-            qa[6+i]=cell->getPos(0)[i];
-            qb[6+i]=cell->getPos(1)[i];
-        }
-        a->setAndUpdate(qa);
-        b->setAndUpdate(qb);
-        moveHumanToFaceTarget(cell);
-        moveRobotToHalfAngle(cell);
-    }
-    Cost computeCost(Cell *c){
-        float kh(1-mh), kr(1-mr);
-        float cost;
-        std::vector<float> angle_h(targets.size());
-        std::vector<float> angle_r(targets.size());
-        std::vector<float> angle_persp(targets.size());
-        std::vector<float> visib(targets.size());
+    Cell *createCell(Grid::ArrayCoord coord,Grid::SpaceCoord pos);
+    void setRobots(Robot *a,Robot *b, Cell *cell);
+    Cost computeCost(Cell *c);
 
-        Eigen::Vector3d hr = r->getHriAgent()->perspective->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
-        if(hr.squaredNorm()){
-            //if vector is non null
-            hr.normalize();
-        }
-        Eigen::Vector2d pr,ph;
-        for(uint i=0;i<2;i++){
-            pr[i] = c->pos[i];
-            ph[i] = c->pos[i+2];
-        }
-        //move agents to positions of the cell:
-        m3dGeometry::setBasePosition2D(r,pr);
-        m3dGeometry::setBasePosition2D(h,ph);
+    float computeStateCost(RobotState &q);
 
-        //for each target get its related values
-        for (uint i=0;i<targets.size();++i){
-            Eigen::Vector3d rt,ht;
-            Robot *target=targets[i];
-            rt =  target->getJoint(0)->getVectorPos() - r->getHriAgent()->perspective->getVectorPos();
-            ht =  target->getJoint(0)->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
-            rt.normalize();
-            ht.normalize();
+    void moveHumanToFaceTarget(Cell *c, uint target_id=0);
+    void moveRobotToHalfAngle(Cell *c, uint target_id=0);
 
-            angle_h[i] = std::acos(hr.dot(ht));//angle for the human to look at the target and the robot
-            angle_r[i] = std::acos((-hr).dot(rt));//idem for robot -> human
-            visib[i] = std::max(0.f,(1-visibility(i,ph))); //visibility cost (i.e. 1=worst, 0=best) of the target for the human
-            angle_persp[i] = std::acos((ht).dot(rt)) * visib[i]; // perspective difference weighted by the visibility of the target
-        }
-        float c_visib=element(visib);
-        float c_angle_r,c_angle_h,c_angle_persp,c_dist_r,c_dist_h,c_prox;
-        c_angle_h = bounded_affine<float>(element(angle_h),0.,M_PI);
-        c_angle_r = bounded_affine<float>(element(angle_r),0,M_PI);
-        c_angle_persp = bounded_affine<float>(element(angle_persp),0,M_PI); //perspective difference
-        c_dist_r = std::pow((start_p_r - pr).norm(),kr*kd+1);//dist robot
-        c_dist_h = std::pow((start_p_h - ph).norm(),kh*kd+1);//dist human
-        c_prox = std::abs(dp-(pr-ph).norm()); //proxemics
+    inline float element(const std::vector<float> &values, float factor=1);
 
-        cost = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka + c_dist_r * kr*kd + c_dist_h * kh*kd + c_prox * kp + c_visib * kv;
-        cost = cost / (kr+kh+ka+kr*kd+kh*kd+kp+kv);
+    inline float visibility(uint target_i, Eigen::Vector2d &pos);
 
-        std::map<std::string,double> costDetails;
-        costDetails["angle h"]=c_angle_h;
-        costDetails["angle r"]=c_angle_r;
-        costDetails["angle persp"]=c_angle_persp;
-        costDetails["dist r"]=c_dist_r;
-        costDetails["dist h"]=c_dist_h;
-        costDetails["proxemics"]=c_prox;
-        costDetails["visib"]=c_visib;
-        global_costSpace->setCostDetails(std::move(costDetails));
+    bool isTooFar(Cell *c,Eigen::Vector2d &from,float threshold);
 
+    bool areAgentTooFarFromEachOther(Cell *c);
 
-        m3dGeometry::setBasePosition2D(r->getObjectRob()->getCylinder(),pr);
-        m3dGeometry::setBasePosition2D(h->getObjectRob()->getCylinder(),ph);
-        API::CollisionInterface *coll=global_Project->getCollision();
-        assert(coll);
-        c->col = 2 - coll->check(r->getObjectRob()->getCylinder(),API::CollisionInterface::COL_ENV | API::CollisionInterface::COL_OBJECTS)
-                - coll->check(h->getObjectRob()->getCylinder(),API::CollisionInterface::COL_ENV | API::CollisionInterface::COL_OBJECTS);
+    PlanningData(Robot *r, Robot *h,std::vector<Robot*> targets);
 
-        c->vis = c_visib < vis_threshold; // if visib is better than ..
-        c->cost.constraint(MyConstraints::COL) = c->col;
-        c->cost.constraint(MyConstraints::VIS) = std::max<float>(0.,c_visib - vis_threshold);
-
-        c->cost.costs[0]=cost;
-        return c->cost;
-    }
-
-    float computeStateCost(RobotState &q)
-    {
-        reinit();
-        if(q.getRobot() == r){
-            Grid::ArrayCoord coord={0,0,0,0};
-            Grid::SpaceCoord pos;
-            for(unsigned int i=0;i<2;i++){
-                pos[i]=q.at(6+i);
-                pos[i+2]=h->getCurrentPos()->at(6+i);
-            }
-            Cell c(coord,pos);
-            computeCost(&c);
-            return c.cost.toDouble();
-        }else if(q.getRobot() == h){
-            Grid::ArrayCoord coord={0,0,0,0};
-            Grid::SpaceCoord pos;
-            for(unsigned int i=0;i<2;i++){
-                pos[i]=r->getCurrentPos()->at(6+i);
-                pos[i+2]=q.at(6+i);
-            }
-            Cell c(coord,pos);
-            computeCost(&c);
-            return c.cost.toDouble();
-        }
-    }
-
-    void moveHumanToFaceTarget(Cell *c, uint target_id=0)
-    {
-        Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
-        Eigen::Vector2d ph(c->pos[2],c->pos[3]);
-        float angle=m3dGeometry::angle(pt-ph);
-        RobotState q=*h->getCurrentPos();
-        q[11]=angle;
-        h->setAndUpdate(q);
-    }
-    void moveRobotToHalfAngle(Cell *c, uint target_id=0)
-    {
-        Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
-        Eigen::Vector2d ph(c->pos[2],c->pos[3]);
-        Eigen::Vector2d pr(c->pos[0],c->pos[1]);
-        using namespace m3dGeometry;
-        float a= angle(ph-pr) + angle(pt-pr,ph-pr)/2;
-        RobotState q=*r->getCurrentPos();
-        q[11]=a;
-        r->setAndUpdate(q);
-    }
-
-    inline float element(const std::vector<float> &values, float factor=1){
-        return *std::max_element(values.begin(),values.end()) * factor;
-    }
-
-    inline float visibility(uint target_i, Eigen::Vector2d &pos){
-        VisibilityCell *cell=dynamic_cast<VisibilityCell*>(visibilityGrid->getCell(pos));
-        if(cell)
-            return cell->visibility(targets[target_i]);
-        else
-            return 0.;
-    }
-
-    bool isTooFar(Cell *c,Eigen::Vector2d &from,float threshold)
-    {
-        Eigen::Vector2d pr,ph;
-        for(uint i=0;i<2;i++){
-            pr[i] = c->pos[i];
-            ph[i] = c->pos[i+2];
-        }
-        if((pr-from).norm() > threshold || (ph-from).norm() > threshold){
-            return true;//too far
-        }else{
-            return areAgentTooFarFromEachOther(c);
-        }
-    }
-
-    bool areAgentTooFarFromEachOther(Cell *c)
-    {
-        Eigen::Vector2d pr,ph;
-        for(uint i=0;i<2;i++){
-            pr[i] = c->pos[i];
-            ph[i] = c->pos[i+2];
-        }
-        return ((pr-ph).norm() > dp*2);
-
-    }
-
-    PlanningData(Robot *r, Robot *h,std::vector<Robot*> targets):
-        r(r),h(h)
-    {
-        this->targets.swap(targets);
-        visibilityGrid=dynamic_cast<VisibilityGridLoader*>(ModuleRegister::getInstance()->module(VisibilityGridLoader::name()))->grid();
-        cyl_r = r->getObjectRob()->getCylinder();
-        cyl_h = h->getObjectRob()->getCylinder();
-
-        reinit();
-    }
-
-    void reinit(){
-        targets.clear();
-
-        start_r = *r->getInitialPosition();
-        start_h = *h->getInitialPosition();
-
-        start_p_r = m3dGeometry::getConfBase2DPos(start_r);
-        start_p_h = m3dGeometry::getConfBase2DPos(start_h);
-
-        API::Parameter::lock_t lock;
-        mr=API::Parameter::root(lock)["PointingPlanner"]["mobrob"].asDouble();
-        mh=API::Parameter::root(lock)["PointingPlanner"]["mobhum"].asDouble();
-        ka=API::Parameter::root(lock)["PointingPlanner"]["kangle"].asDouble();
-        kp=API::Parameter::root(lock)["PointingPlanner"]["kproxemics"].asDouble();
-        dp=API::Parameter::root(lock)["PointingPlanner"]["distproxemics"].asDouble();
-        kd=API::Parameter::root(lock)["PointingPlanner"]["kdist"].asDouble();
-        kv=API::Parameter::root(lock)["PointingPlanner"]["kvisib"].asDouble();
-        vis_threshold=API::Parameter::root(lock)["PointingPlanner"]["vis_threshold"].asDouble();
-
-        API::Parameter &ptargets = API::Parameter::root(lock)["PointingPlanner"]["targets"];
-        for(uint i=0;i<ptargets.size();++i){
-            targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
-            assert(targets.back());//not null
-        }
-
-        balls.reset(new Graphic::LinkedBalls2d);
-        balls->name="PointingPlanner";
-    }
+    void reinit();
 
     Robot *r;
     Robot *h;
@@ -469,6 +273,226 @@ void PointingPlanner::run()
 
     Graphic::DrawablePool::sAddLinkedBalls2d(_data->balls);
     ENV.setBool(Env::isRunning,false);
+}
+
+Cell *PlanningData::createCell(API::nDimGrid::ArrayCoord coord, API::nDimGrid::SpaceCoord pos){
+    Cell *cell=new Cell(coord,pos);
+    cell->col = 0;
+    computeCost(cell);
+    return cell;
+}
+
+void PlanningData::setRobots(Robot *a, Robot *b, Cell *cell){
+    RobotState qa,qb;
+    qa=*a->getCurrentPos();
+    qb=*b->getCurrentPos();
+    for(uint i=0;i<2;++i){
+        qa[6+i]=cell->getPos(0)[i];
+        qb[6+i]=cell->getPos(1)[i];
+    }
+    a->setAndUpdate(qa);
+    b->setAndUpdate(qb);
+    moveHumanToFaceTarget(cell);
+    moveRobotToHalfAngle(cell);
+}
+
+Cost PlanningData::computeCost(Cell *c){
+    float kh(1-mh), kr(1-mr);
+    float cost;
+    std::vector<float> angle_h(targets.size());
+    std::vector<float> angle_r(targets.size());
+    std::vector<float> angle_persp(targets.size());
+    std::vector<float> visib(targets.size());
+
+    Eigen::Vector3d hr = r->getHriAgent()->perspective->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
+    if(hr.squaredNorm()){
+        //if vector is non null
+        hr.normalize();
+    }
+    Eigen::Vector2d pr,ph;
+    for(uint i=0;i<2;i++){
+        pr[i] = c->pos[i];
+        ph[i] = c->pos[i+2];
+    }
+    //move agents to positions of the cell:
+    m3dGeometry::setBasePosition2D(r,pr);
+    m3dGeometry::setBasePosition2D(h,ph);
+
+    //for each target get its related values
+    for (uint i=0;i<targets.size();++i){
+        Eigen::Vector3d rt,ht;
+        Robot *target=targets[i];
+        rt =  target->getJoint(0)->getVectorPos() - r->getHriAgent()->perspective->getVectorPos();
+        ht =  target->getJoint(0)->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
+        rt.normalize();
+        ht.normalize();
+
+        angle_h[i] = std::acos(hr.dot(ht));//angle for the human to look at the target and the robot
+        angle_r[i] = std::acos((-hr).dot(rt));//idem for robot -> human
+        visib[i] = std::max(0.f,(1-visibility(i,ph))); //visibility cost (i.e. 1=worst, 0=best) of the target for the human
+        angle_persp[i] = std::acos((ht).dot(rt)) * visib[i]; // perspective difference weighted by the visibility of the target
+    }
+    float c_visib=element(visib);
+    float c_angle_r,c_angle_h,c_angle_persp,c_dist_r,c_dist_h,c_prox;
+    c_angle_h = bounded_affine<float>(element(angle_h),0.,M_PI);
+    c_angle_r = bounded_affine<float>(element(angle_r),0,M_PI);
+    c_angle_persp = bounded_affine<float>(element(angle_persp),0,M_PI); //perspective difference
+    c_dist_r = std::pow((start_p_r - pr).norm(),kr*kd+1);//dist robot
+    c_dist_h = std::pow((start_p_h - ph).norm(),kh*kd+1);//dist human
+    c_prox = std::abs(dp-(pr-ph).norm()); //proxemics
+
+    cost = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka + c_dist_r * kr*kd + c_dist_h * kh*kd + c_prox * kp + c_visib * kv;
+    cost = cost / (kr+kh+ka+kr*kd+kh*kd+kp+kv);
+
+    std::map<std::string,double> costDetails;
+    costDetails["angle h"]=c_angle_h;
+    costDetails["angle r"]=c_angle_r;
+    costDetails["angle persp"]=c_angle_persp;
+    costDetails["dist r"]=c_dist_r;
+    costDetails["dist h"]=c_dist_h;
+    costDetails["proxemics"]=c_prox;
+    costDetails["visib"]=c_visib;
+    global_costSpace->setCostDetails(std::move(costDetails));
+
+
+    m3dGeometry::setBasePosition2D(r->getObjectRob()->getCylinder(),pr);
+    m3dGeometry::setBasePosition2D(h->getObjectRob()->getCylinder(),ph);
+    API::CollisionInterface *coll=global_Project->getCollision();
+    assert(coll);
+    c->col = 2 - coll->check(r->getObjectRob()->getCylinder(),API::CollisionInterface::COL_ENV | API::CollisionInterface::COL_OBJECTS)
+            - coll->check(h->getObjectRob()->getCylinder(),API::CollisionInterface::COL_ENV | API::CollisionInterface::COL_OBJECTS);
+
+    c->vis = c_visib < vis_threshold; // if visib is better than ..
+    c->cost.constraint(MyConstraints::COL) = c->col;
+    c->cost.constraint(MyConstraints::VIS) = std::max<float>(0.,c_visib - vis_threshold);
+
+    c->cost.costs[0]=cost;
+    return c->cost;
+}
+
+float PlanningData::computeStateCost(RobotState &q)
+{
+    reinit();
+    if(q.getRobot() == r){
+        Grid::ArrayCoord coord={0,0,0,0};
+        Grid::SpaceCoord pos;
+        for(unsigned int i=0;i<2;i++){
+            pos[i]=q.at(6+i);
+            pos[i+2]=h->getCurrentPos()->at(6+i);
+        }
+        Cell c(coord,pos);
+        computeCost(&c);
+        return c.cost.toDouble();
+    }else if(q.getRobot() == h){
+        Grid::ArrayCoord coord={0,0,0,0};
+        Grid::SpaceCoord pos;
+        for(unsigned int i=0;i<2;i++){
+            pos[i]=r->getCurrentPos()->at(6+i);
+            pos[i+2]=q.at(6+i);
+        }
+        Cell c(coord,pos);
+        computeCost(&c);
+        return c.cost.toDouble();
+    }
+}
+
+void PlanningData::moveHumanToFaceTarget(Cell *c, uint target_id)
+{
+    Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
+    Eigen::Vector2d ph(c->pos[2],c->pos[3]);
+    float angle=m3dGeometry::angle(pt-ph);
+    RobotState q=*h->getCurrentPos();
+    q[11]=angle;
+    h->setAndUpdate(q);
+}
+
+void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
+{
+    Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
+    Eigen::Vector2d ph(c->pos[2],c->pos[3]);
+    Eigen::Vector2d pr(c->pos[0],c->pos[1]);
+    using namespace m3dGeometry;
+    float a= angle(ph-pr) + angle(pt-pr,ph-pr)/2;
+    RobotState q=*r->getCurrentPos();
+    q[11]=a;
+    r->setAndUpdate(q);
+}
+
+float PlanningData::element(const std::vector<float> &values, float factor){
+    return *std::max_element(values.begin(),values.end()) * factor;
+}
+
+float PlanningData::visibility(uint target_i, Eigen::Vector2d &pos){
+    VisibilityCell *cell=dynamic_cast<VisibilityCell*>(visibilityGrid->getCell(pos));
+    if(cell)
+        return cell->visibility(targets[target_i]);
+    else
+        return 0.;
+}
+
+bool PlanningData::isTooFar(Cell *c, Eigen::Vector2d &from, float threshold)
+{
+    Eigen::Vector2d pr,ph;
+    for(uint i=0;i<2;i++){
+        pr[i] = c->pos[i];
+        ph[i] = c->pos[i+2];
+    }
+    if((pr-from).norm() > threshold || (ph-from).norm() > threshold){
+        return true;//too far
+    }else{
+        return areAgentTooFarFromEachOther(c);
+    }
+}
+
+bool PlanningData::areAgentTooFarFromEachOther(Cell *c)
+{
+    Eigen::Vector2d pr,ph;
+    for(uint i=0;i<2;i++){
+        pr[i] = c->pos[i];
+        ph[i] = c->pos[i+2];
+    }
+    return ((pr-ph).norm() > dp*2);
+
+}
+
+PlanningData::PlanningData(Robot *r, Robot *h, std::vector<Robot *> targets):
+    r(r),h(h)
+{
+    this->targets.swap(targets);
+    visibilityGrid=dynamic_cast<VisibilityGridLoader*>(ModuleRegister::getInstance()->module(VisibilityGridLoader::name()))->grid();
+    cyl_r = r->getObjectRob()->getCylinder();
+    cyl_h = h->getObjectRob()->getCylinder();
+
+    reinit();
+}
+
+void PlanningData::reinit(){
+    targets.clear();
+
+    start_r = *r->getInitialPosition();
+    start_h = *h->getInitialPosition();
+
+    start_p_r = m3dGeometry::getConfBase2DPos(start_r);
+    start_p_h = m3dGeometry::getConfBase2DPos(start_h);
+
+    API::Parameter::lock_t lock;
+    mr=API::Parameter::root(lock)["PointingPlanner"]["mobrob"].asDouble();
+    mh=API::Parameter::root(lock)["PointingPlanner"]["mobhum"].asDouble();
+    ka=API::Parameter::root(lock)["PointingPlanner"]["kangle"].asDouble();
+    kp=API::Parameter::root(lock)["PointingPlanner"]["kproxemics"].asDouble();
+    dp=API::Parameter::root(lock)["PointingPlanner"]["distproxemics"].asDouble();
+    kd=API::Parameter::root(lock)["PointingPlanner"]["kdist"].asDouble();
+    kv=API::Parameter::root(lock)["PointingPlanner"]["kvisib"].asDouble();
+    vis_threshold=API::Parameter::root(lock)["PointingPlanner"]["vis_threshold"].asDouble();
+
+    API::Parameter &ptargets = API::Parameter::root(lock)["PointingPlanner"]["targets"];
+    for(uint i=0;i<ptargets.size();++i){
+        targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
+        assert(targets.back());//not null
+    }
+
+    balls.reset(new Graphic::LinkedBalls2d);
+    balls->name="PointingPlanner";
 }
 
 } // namespace move4d
