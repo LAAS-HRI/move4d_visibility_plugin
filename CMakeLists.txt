@@ -30,8 +30,9 @@ find_package(libmove3d REQUIRED)
 find_package(OGRE 1.9 REQUIRED)
 find_package(move4d REQUIRED)
 find_package(move4d-gui REQUIRED)
+find_package(Boost REQUIRED COMPONENTS serialization)
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include BEFORE)
 
 file(GLOB_RECURSE HDRS
     "include/*.hpp"
@@ -43,12 +44,14 @@ set(SRCS
     src/VisibilityGridCreator.cpp
     src/VisibilityGridLoader.cpp
     src/create_entities.cpp
-    src/VisibilityPlanner.cpp
+    #src/VisibilityPlanner.cpp
     src/PointingPlanner.cpp
+    src/PointingPlannerModule.cpp
+    src/LocationIndicatorPlanner.cpp
 )
 
 add_library(${PROJECT_NAME} SHARED ${SRCS} ${HDRS})
-target_link_libraries(${PROJECT_NAME} move4d ${LIBS} move3d move4d-gui-common ${OGRE_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} move4d ${LIBS} move3d move4d-gui-common ${OGRE_LIBRARIES} Boost::serialization)
 
 add_executable(test src/test.cpp)
 target_link_libraries(test ${PROJECT_NAME})

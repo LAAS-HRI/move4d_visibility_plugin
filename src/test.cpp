@@ -1,6 +1,6 @@
 #include "VisibilityGrid/VisibilityGridCreator.hpp"
 #include "VisibilityGrid/VisibilityGridLoader.hpp"
-#include "VisibilityGrid/PointingPlanner.hpp"
+#include "VisibilityGrid/PointingPlannerModule.hpp"
 
 
 int main(){

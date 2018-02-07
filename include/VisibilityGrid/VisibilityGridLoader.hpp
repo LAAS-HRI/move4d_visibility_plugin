@@ -6,7 +6,7 @@
 
 namespace move4d {
 
-class VisibilityGrid;
+class VisibilityGrid3d;
 
 class VisibilityGridLoader : public move4d::ModuleBase
 {
@@ -19,10 +19,10 @@ public:
 
     virtual void initialize() override;
 
-    VisibilityGrid *grid() const;
+    VisibilityGrid3d *grid() const;
 
 private:
-    VisibilityGrid *_grid;
+    VisibilityGrid3d *_grid=nullptr;
     static VisibilityGridLoader *__instance;
 };
 

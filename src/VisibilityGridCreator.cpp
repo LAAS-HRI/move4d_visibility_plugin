@@ -11,6 +11,8 @@
 #include <jsoncpp/json/json.h>
 
 #include <iostream>
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
 
 using namespace std;
 
@@ -34,28 +36,25 @@ VisibilityGridCreator::~VisibilityGridCreator()
 
 void VisibilityGridCreator::computeVisibilities()
 {
-    MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(360.));
-    double nb_step_max = visibEngine.getPixelPerDegree() * 20;
-    nb_step_max *= nb_step_max;
+    MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(360.),256u); //256 pixels per 90deg
+    double nb_pixel_max = visibEngine.getPixelPerDegree() * 10;
+    nb_pixel_max *= nb_pixel_max;
     visibEngine.prepareScene();
     for(unsigned int i=0;i<_grid->getNumberOfCells();++i){
-        VisibilityCell *cell=dynamic_cast<VisibilityCell*>(_grid->getCell(i));
-        Eigen::Vector2d corner = cell->getCorner();
-        std::map<Robot*,double> vis;
-        Eigen::Vector3d p;
-        p[0]=corner[0] + _grid->getCellSize()[0]/2;
-        p[1]=corner[1] + _grid->getCellSize()[1]/2;
-        p[2]=1.5;
+        VisibilityGrid3d::reference vis=_grid->getCell(i);
+        VisibilityGrid3d::SpaceCoord center = _grid->getCellCenter(_grid->getCellCoord(i));
+        Eigen::Vector3d p(center[0],center[1],center[2]);
         Eigen::Affine3d transform{Eigen::Translation3d(p)};
 
         visibEngine.computeVisibilityFrom(transform);
 
-        for(auto p : visibEngine.getVisibilityCounts()){
-            vis[p.first] = p.second /  nb_step_max;
+        for(uint r=0;r<global_Project->getActiveScene()->getNumberOfRobots();++r){
+            Robot *rob = global_Project->getActiveScene()->getRobot(r);
+            vis[rob]=visibEngine.getVisibilityOf(rob) / nb_pixel_max;
         }
-        cell->setVisibilities(std::move(vis));
-
-
+        //for(auto p : visibEngine.getVisibilityCounts()){
+        //    vis[p.first] = p.second /  nb_pixel_max;
+        //}
     }
     visibEngine.finish();
 
@@ -84,32 +83,21 @@ void VisibilityGridCreator::computeVisibilities()
 }
 
 void VisibilityGridCreator::writeGridsToFile(const std::string &name){
-    Json::Value root,matrices;
-    Json::Value cellsize;
-    cellsize.append(_grid->getCellSize()[0]);
-    cellsize.append(_grid->getCellSize()[1]);
-    root["cellsize"]=cellsize;
-    Json::Value dim;
-    dim.append(_grid->getSize()[0]);
-    dim.append(_grid->getSize()[1]);
-    root["dim"]=dim;
-    for(int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
-        MoveOgre::Robot *r=dynamic_cast<MoveOgre::Robot*>(global_Project->getActiveScene()->getRobot(i));
-        Json::Value array;
-        for(unsigned int x=0;x<_grid->getNumberOfCells();++x){
-            array.append(Json::Value(dynamic_cast<VisibilityCell*>(_grid->getCell(x))->visibility(r)));
-        }
-        matrices[r->getName()] = array;
+    //boost serialization
+    {
+    ofstream of;
+    of.open(name,ios::out | ios::binary);
+    boost::archive::binary_oarchive oa(of);
+    oa << *_grid;
+    of.close();
     }
 
-    root["matrices"]=matrices;
-    ofstream file;
-    file.open(name);
-    if(file){
-        Json::FastWriter writer;
-        writer.enableYAMLCompatibility();
-        file<<writer.write(root);
-        file.close();
+    {
+    ofstream of;
+    of.open(name+".txt",ios::out);
+    boost::archive::text_oarchive oa(of);
+    oa << *_grid;
+    of.close();
     }
 }
 
@@ -126,14 +114,18 @@ void VisibilityGridCreator::run()
 
     //MoveOgre::OgreBase::getInstance()->renderOneFrame();
 
-    _grid = new VisibilityGrid(0.3,global_Project->getActiveScene()->getBounds());
-    _grid->createAllCells();
+    bool adapt_cellsize=true;
+    std::vector<double> envSize=global_Project->getActiveScene()->getBounds();
+    envSize[4]=0.8;
+    envSize[5]=2.;
+    _grid = new VisibilityGrid3d({{0.3,0.3,0.3}},adapt_cellsize,envSize);
+    std::cout<<"VisibilityGrid3d nb cell="<<_grid->getNumberOfCells()<<std::endl;
     computeVisibilities();
-    writeGridsToFile("./visibility.json");
+    writeGridsToFile("./data/visibility_grid_bin");
 
     for(unsigned int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
         Robot *r= global_Project->getActiveScene()->getRobot(i);
-        Graphic::DrawablePool::sAddDrawable2dGrid(std::shared_ptr<Graphic::Drawable2dGrid>(new Graphic::Drawable2dGrid{"Vis"+r->getName(),_grid->matrix(r),_grid->getCellSize(),_grid->getOriginCorner()}));
+        Graphic::DrawablePool::sAddGrid3Dfloat(std::shared_ptr<Graphic::Grid3Dfloat>(new Graphic::Grid3Dfloat{"Vis"+r->getName(),_grid->computeGridOf(r)}));
     }
 }
 }

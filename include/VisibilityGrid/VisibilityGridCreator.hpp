@@ -4,7 +4,7 @@
 #include <move4d/API/moduleBase.hpp>
 
 namespace move4d{
-class VisibilityGrid;
+class VisibilityGrid3d;
 class VisibilityGridCreator : public ModuleBase
 {
 protected:
@@ -21,7 +21,7 @@ protected:
     void writeGridsToFile(const std::string &name);
 
 private:
-    VisibilityGrid *_grid;
+    VisibilityGrid3d *_grid;
     static VisibilityGridCreator *__instance;
 };
 }
