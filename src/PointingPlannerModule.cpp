@@ -55,6 +55,7 @@ void PointingPlanner::initialize()
         parameter["speedhum"]=API::Parameter(0.8);
         parameter["speedrob"]=API::Parameter(0.8);
         parameter["ktime"] = API::Parameter(1.);
+        parameter["ktimerob"] = API::Parameter(1.);
         parameter["kangle"] = API::Parameter(1.);
         parameter["kdist"] = API::Parameter(1.);
         parameter["kproxemics"] = API::Parameter(1.);
@@ -63,6 +64,8 @@ void PointingPlanner::initialize()
         parameter["vis_threshold"] = API::Parameter(0.5);
         parameter["kvisib"] = API::Parameter(5.);
         parameter["targets"] = API::Parameter(std::vector<API::Parameter>{global_Project->getActiveScene()->getRobot(0u)->getName()});
+        parameter["use_physical_target"] = API::Parameter(false);
+        parameter["physical_target_pos"] = API::Parameter(std::vector<API::Parameter>{0.,0.});
     }
     lock.unlock();
 

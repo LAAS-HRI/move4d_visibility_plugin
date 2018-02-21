@@ -4,8 +4,30 @@
 #include <move4d/utils/Geometry.h>
 #include <move4d/API/project.hpp>
 #include <move4d/planner/cost_space.hpp>
+#include <move4d/utils/multiHandOver/SimpleGraph.h>
+#include <move4d/utils/multiHandOver/graphAlgorithms.h>
 
 namespace move4d { namespace LocationIndicator{
+
+template<typename T>
+class NodeBase : public mho::Node
+{
+public:
+    using reference = T&;
+    using const_reference = T const &;
+    using data_type = T;
+
+    NodeBase(const_reference data):
+        mho::Node(),
+        data(data)
+    { }
+
+    const_reference getData() const { return data;}
+    void setData(const data_type &value){data=value;}
+
+private:
+    data_type data;
+};
 
 LocationIndicatorPlanner* LocationIndicatorPlanner::__instance = new LocationIndicatorPlanner();
 
@@ -22,6 +44,21 @@ LocationIndicatorPlanner::LocationIndicatorPlanner()
     addToRegister();
 }
 
+void LocationIndicatorPlanner::loadRouteGraph()
+{
+    API::Parameter::lock_t lock;
+    API::Parameter &param=API::Parameter::root(lock)["LocationIndicator"]["routes"];
+    for(uint i=0 ; i<param["nodes"].size() ; ++i){
+        mRouteGraph->addNode(new NodeBase<API::Parameter>(param["nodes"][i]));
+    }
+
+    for(uint i=0 ; i<param["edges"].size() ; ++i){
+        API::Parameter &e=param["edges"][i];
+        mRouteGraph->connectNodes(mRouteGraph->at(e["from"].asInt()),mRouteGraph->at(e["to"].asInt()),e["cost"].asDouble());
+    }
+
+}
+
 void LocationIndicatorPlanner::findHumanOnly(TargetInformation &target)
 {
     const double max_pointing_cost = 1.;
@@ -32,7 +69,7 @@ void LocationIndicatorPlanner::findHumanOnly(TargetInformation &target)
 
     for(uint i =0; i<target.references.size();++i){
         PlanningData plan(target.robot,target.human);
-        plan.targets.assign(1,target.references[i]);
+        plan.targets.assign(1,target.references[i].first);
         plan.max_dist=50.;
         plan.mr=0.f;
         plan.mh=1.f;
@@ -41,6 +78,9 @@ void LocationIndicatorPlanner::findHumanOnly(TargetInformation &target)
         plan.vis_threshold=0.5f;
 
         costs.push_back(plan.run(false));
+        costs.back().cost.cost(PlanningData::Cost::Costs::COST)+=std::pow(plan.kt*target.references[i].second,2.) +
+                std::pow(plan.ktr*target.references[i].second,2.);
+        costs.back().cost.cost(PlanningData::Cost::Costs::TIME) += target.references[i].second;
         if(best==-1u || costs.back() < best_cell){
             best=i;
             best_cell=costs.back();
@@ -50,8 +90,8 @@ void LocationIndicatorPlanner::findHumanOnly(TargetInformation &target)
     }
     if(best!=-1u && best_cell.cost.toDouble() < 1000.){
         //found a good place for the human
-        std::cout << "human goes at "<<best_cell.getPos(1)<<" and will see "<<target.references[best]->getName()<<
-                     " at "<< m3dGeometry::getConfBase2DPos(*target.references[best]->getCurrentPos()) <<std::endl;
+        std::cout << "human goes at "<<best_cell.getPos(1).transpose()<<" and will see "<<target.references[best].first->getName()<<
+                     " at "<< m3dGeometry::getConfBase2DPos(*target.references[best].first->getCurrentPos()).transpose() <<std::endl;
         target.human->setAndUpdate(human_state);
         target.robot->setAndUpdate(robot_state);
     }else if(best!=-1u){
@@ -69,7 +109,7 @@ Robot* LocationIndicatorPlanner::isTargetVisibleFromInit(TargetInformation &targ
     try{
         VisibilityGrid3d::reference cell=visibGridLoader->grid()->getCell(target.human,target.humanVPosInit());
         for(auto t : target.references){
-            auto it = cell.find(t);
+            auto it = cell.find(t.first);
             if (it!=cell.end()) {
                 if(best_vis < it->second){
                     best_vis=it->second;
@@ -125,8 +165,11 @@ void LocationIndicatorPlanner::run(TargetInformation &target)
         for(uint i =0; i<target.references.size();++i){
             PlanningData plan(target.robot,target.human);
             plan.getParameters();
-            plan.targets.assign(1,target.references[i]);
+            plan.targets.assign(1,target.references[i].first);
             costs.push_back(plan.run(false));
+            costs.back().cost.cost(PlanningData::Cost::Costs::COST)+=std::pow(plan.kt*target.references[i].second,2.) +
+                    std::pow(plan.ktr*target.references[i].second,2.);
+            costs.back().cost.cost(PlanningData::Cost::Costs::TIME)+=target.references[i].second;
             if(best==-1u || costs.back() < best_cell){
                 best=i;
                 best_cell=costs.back();
@@ -136,7 +179,7 @@ void LocationIndicatorPlanner::run(TargetInformation &target)
         }
         if(best_cell.cost.toDouble() < max_pointing_cost){
             //found a good pointing solution
-            std::cout<<"found good pointing for target "<<target.references[best]->getName()<<std::endl;
+            std::cout<<"found good pointing for target "<<target.references[best].first->getName()<<std::endl;
             target.human->setAndUpdate(human_state);
             target.robot->setAndUpdate(robot_state);
         }else{
@@ -146,13 +189,30 @@ void LocationIndicatorPlanner::run(TargetInformation &target)
     }
 }
 
+void LocationIndicatorPlanner::runCompare(TargetInformation &target)
+{
+    PlanningData plan(target.robot,target.human);
+    plan.getParameters();
+    plan.targets.clear();
+    plan.routeDirTimes.clear();
+    for(auto it : target.references){
+        plan.targets.push_back(it.first);
+        plan.routeDirTimes.push_back(it.second);
+    }
+    PlanningData::Cell cell = plan.run(false);
+    std::cout<<"found good pointing for target "<<target.references[cell.target].first->getName();
+    std::cout<<"cost="<<cell.cost.cost(PlanningData::MyCosts::COST)<<
+               "\ntime="<<cell.cost.cost(PlanningData::MyCosts::TIME)<<std::endl;
+
+}
+
 void LocationIndicatorPlanner::run()
 {
     Robot *r,*h;
     r=global_Project->getActiveScene()->getActiveRobot();
     h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
 
-    std::vector<Robot*> targets;
+    std::vector<std::pair<Robot*,float> > targets;
     API::Parameter ptargets;
     TargetInformation data;
     {
@@ -160,16 +220,21 @@ void LocationIndicatorPlanner::run()
     ptargets = API::Parameter::root(lock)["LocationIndicator"]["references"];
     data.known=API::Parameter::root(lock)["LocationIndicator"]["known"].asBool();
     data.see_first=API::Parameter::root(lock)["LocationIndicator"]["see_first"].asBool();
+    // data.positionPhysicalTarget[0]=API::Parameter::root(lock)["LocationIndicator"]["physical_target_pos"][0].asDouble();
+    // data.positionPhysicalTarget[1]=API::Parameter::root(lock)["LocationIndicator"]["physical_target_pos"][1].asDouble();
     }
+    loadRouteGraph();
     for(uint i=0;i<ptargets.size();++i){
-        targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
-        assert(targets.back());//not null
+        targets.push_back(std::make_pair(global_Project->getActiveScene()->getRobotByName(ptargets[i]["name"].asString()),
+                          float(ptargets[i]["dir_cost"].asDouble())));
+        assert(targets.back().first);//not null
     }
     data.human=h;
     data.robot=r;
     data.references=targets;
 
-    run(data);
+    runCompare(data);
+    //run(data);
 }
 
 std::array<float, 2> TargetInformation::humanPosInit(){

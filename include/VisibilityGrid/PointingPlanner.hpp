@@ -28,8 +28,8 @@ struct MyCost
     using Type = MyCost<NCONS,NCOST,CONSTRAINTS,COSTS>;
     std::array<float,NCONS> constraints;
     std::array<float,NCOST> costs;
-    float &constraint(Constraints c){return constraints[(int)c];}
-    float &cost(Costs c){return costs[(int)c];}
+    float &constraint(Constraints c){return constraints.at((int)c);}
+    float &cost(Costs c){return costs.at((int)c);}
     bool isValid(){for(float c : constraints){if (c>0.f) return false;} return true;}
     bool operator<(const Type &other) const{
         return (constraints != other.constraints ? constraints < other.constraints : costs < other.costs);
@@ -51,7 +51,7 @@ struct MyCost
         }
         for(int i=0;i<ncost;++i){
             //assert(costs[i]<=1.);
-            v+=costs[i] * std::pow(10,ncost - i);
+            v+=costs[i] * std::pow(10,ncost - i - 1);
         }
         return v;
     }
@@ -65,6 +65,7 @@ struct MyCell{
     using CostType = C;
     bool col;
     bool vis;
+    uint target;
     C cost;
     ArrayCoord coord;
     SpaceCoord pos; //pos[0:1] = robot, pos[2:3] = human
@@ -75,10 +76,10 @@ struct MyCell{
     inline Eigen::Vector2d vPosRobot() const {return Eigen::Vector2d(pos[0],pos[1]);}
     inline Eigen::Vector2d vPosHuman() const {return Eigen::Vector2d(pos[2],pos[3]);}
     MyCell(ArrayCoord coord,SpaceCoord pos):
-    open(0)
+    open(0),
+      coord(coord),
+      pos(pos)
     {
-        std::swap(coord,this->coord);
-        std::swap(pos,this->pos);
     }
     bool operator<(const MyCell<C> &other) const {
         return (cost < other.cost);
@@ -90,8 +91,8 @@ struct PlanningData
     MOVE3D_STATIC_LOGGER;
 public:
     enum class MyConstraints {COL=0,VIS,DIST};
-    enum class MyCosts {COST=0};
-    using Cost = MyCost<3,1,MyConstraints,MyCosts>;
+    enum class MyCosts {COST=0,TIME};
+    using Cost = MyCost<3,2,MyConstraints,MyCosts>;
     using Cell = MyCell<Cost>;
     using Grid = typename API::nDimGrid<Cell*,4>;
 
@@ -107,6 +108,9 @@ public:
     void moveRobotToHalfAngle(Cell *c, uint target_id=0);
 
     inline float element(const std::vector<float> &values, float factor=1);
+
+    Cost targetCost(Cell *c, uint i, float visib, const Eigen::Vector3d &hr);
+    float getRouteDirTime(Cell *c, uint i);
 
     float visibility(uint target_i, const Eigen::Vector3d &pos);
 
@@ -130,11 +134,14 @@ public:
     Robot *r;
     Robot *h;
     std::vector<Robot*> targets;
+    std::vector<float> routeDirTimes;
+    bool usePhysicalTarget;
+    Eigen::Vector2d physicalTarget;///< where the human has to get in the end
     VisibilityGrid3d* visibilityGrid;
     MoveOgre::VisibilityEngine *visibEngine;
 
     float mr,mh,sr,sh;
-    float ka,kd,kt,kp,kv;//factors
+    float ka,kd,kt,ktr,kp,kv;//factors
     float dp; //optimal distance (proxemics)
     float vis_threshold; //maximal visibility cost to consider a object is visible
     float max_dist;//maximal distance run by either agent
@@ -148,7 +155,7 @@ public:
     std::shared_ptr<move4d::Graphic::LinkedBalls2d> balls;
 
     API::nDimGrid<bool,2> freespace_h,freespace_r;///< cell is true if in free space
-    API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float> distGrid_h,distGrid_r;
+    API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float> distGrid_h,distGrid_r,distGrid_physicalTarget;
 };
 
 } // namespace move4d

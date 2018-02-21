@@ -9,14 +9,16 @@
 #include <move4d/API/moduleBase.hpp>
 
 
-namespace move4d { namespace LocationIndicator{
+namespace move4d {
+namespace mho{class SimpleGraph;}
+namespace LocationIndicator{
 
 struct TargetInformation
 {
     Robot *robot;
     Robot *human;
     Eigen::Vector2d getPositionOfPhysicalTarget() const {return positionPhysicalTarget;}
-    std::vector<Robot*> references;
+    std::vector<std::pair<Robot*,float> > references;
     bool known;
     bool see_first;
     std::array<float,2> humanPosInit();
@@ -38,8 +40,13 @@ public:
     void pointFromInit(TargetInformation &target, Robot *obj);
 
     void run(TargetInformation &target);
+    void runCompare(TargetInformation &target);
     void run();
 
+    void loadRouteGraph();
+
+private:
+    mho::SimpleGraph *mRouteGraph=nullptr;
 };
 
 }
