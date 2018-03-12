@@ -118,7 +118,7 @@ void VisibilityGridCreator::run()
     std::vector<double> envSize=global_Project->getActiveScene()->getBounds();
     envSize[4]=0.8;
     envSize[5]=2.;
-    _grid = new VisibilityGrid3d({{0.3,0.3,0.3}},adapt_cellsize,envSize);
+    _grid = new VisibilityGrid3d({{0.8,0.8,1.2}},adapt_cellsize,envSize);
     std::cout<<"VisibilityGrid3d nb cell="<<_grid->getNumberOfCells()<<std::endl;
     computeVisibilities();
     writeGridsToFile("./data/visibility_grid_bin");

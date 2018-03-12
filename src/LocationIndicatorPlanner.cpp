@@ -201,9 +201,10 @@ void LocationIndicatorPlanner::runCompare(TargetInformation &target)
     }
     PlanningData::Cell cell = plan.run(false);
     std::cout<<"found good pointing for target "<<target.references[cell.target].first->getName();
-    std::cout<<"cost="<<cell.cost.cost(PlanningData::MyCosts::COST)<<
+    std::cout<<"\ncost="<<cell.cost.cost(PlanningData::MyCosts::COST)<<
                "\ntime="<<cell.cost.cost(PlanningData::MyCosts::TIME)<<std::endl;
 
+    std::cout <<"post compute cost="<<plan.computeStateCost(*plan.r->getCurrentPos())<<std::endl;
 }
 
 void LocationIndicatorPlanner::run()

@@ -61,6 +61,7 @@ void PointingPlanner::initialize()
         parameter["kproxemics"] = API::Parameter(1.);
         parameter["distproxemics"] = API::Parameter(0.75);
         parameter["maxdist"] = API::Parameter(3.5);
+        parameter["maxtime"] = API::Parameter(60.);
         parameter["vis_threshold"] = API::Parameter(0.5);
         parameter["kvisib"] = API::Parameter(5.);
         parameter["targets"] = API::Parameter(std::vector<API::Parameter>{global_Project->getActiveScene()->getRobot(0u)->getName()});

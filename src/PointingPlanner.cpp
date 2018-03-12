@@ -67,8 +67,8 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     Grid::SpaceCoord pos;
     Eigen::Vector2d from;
     for(uint i=0;i<2;++i){
-        from[i]=pos[0+i]=r->getCurrentPos()->at(6+i);
-        pos[2+i]=h->getCurrentPos()->at(6+i);
+        from[i]=pos[0+i]=r->getInitialPosition()->at(6+i);
+        pos[2+i]=h->getInitialPosition()->at(6+i);
     }
     coord=grid.getCellCoord(pos);
     Cell *start=createCell(coord,grid.getCellCenter(coord));
@@ -93,6 +93,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
                 c=grid[neigh];
                 if(!c){
                     c=new Cell(neigh,grid.getCellCenter(neigh));
+                    assert(c->cost.toDouble()==0.);
                     c->col=0.;
                     grid[neigh]=c;
                     c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
@@ -113,6 +114,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
                     std::push_heap(open_heap.begin(),open_heap.end(),comp);
                     c->open=true;
                     if(c->cost < best->cost){
+                        //Cell::CostType xx=best->cost;
                         best = c;
                         iter_of_best=count;
                         //setRobots(r,h,best);
@@ -142,7 +144,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     auto &ball_values = balls->balls_values;
     using BallValue_t=std::pair<float,std::vector<Eigen::Vector2d> >;
     std::sort(ball_values.begin(),ball_values.end(), [](const BallValue_t &a, const BallValue_t &b) {return a.first < b.first;});
-    ball_values.erase(ball_values.begin()+std::min<uint>(100u,ball_values.size()),ball_values.end());
+    ball_values.erase(ball_values.begin()+std::min<uint>(1000u,ball_values.size()),ball_values.end());
     if(ball_values.size())
         M3D_DEBUG("balls: from "<<ball_values.front().first<<" to "<<ball_values.back().first);
 
@@ -168,28 +170,43 @@ void PlanningData::setRobots(Robot *a, Robot *b, Cell *cell){
         qa[6+i]=cell->getPos(0)[i];
         qb[6+i]=cell->getPos(1)[i];
     }
+    qa.setCost(cell->cost.toDouble());
+    qb.setCost(cell->cost.toDouble());
     a->setAndUpdate(qa);
     b->setAndUpdate(qb);
     moveHumanToFaceTarget(cell,cell->target);
     moveRobotToHalfAngle(cell,cell->target);
 }
 
-PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib, const Eigen::Vector3d &hr)
+PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float visib_r)
 {
+    visib = std::max(visib,visib_r);
     visib = std::max(0.f,visib);
     Cost cost;
     float kh(1-mh), kr(1-mr);
-    Eigen::Vector3d rt,ht;
+    float c_visib = bounded_affine<float>(visib,0.2f,vis_threshold,0.f,1.f);
+    c_visib*=c_visib;
+    Eigen::Vector3d rt,ht,hr;
+    Eigen::Vector2d rt2,ht2,hr2;
     Robot *target=targets[i];
+    c->target = i; //used by setRobots
+    this->setRobots(r,h,c);
     rt =  target->getJoint(0)->getVectorPos() - r->getHriAgent()->perspective->getVectorPos();
     ht =  target->getJoint(0)->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
-    rt.normalize();
-    ht.normalize();
+    hr = r->getHriAgent()->perspective->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
+    for(uint i=0;i<2;++i){
+        rt2[i]=rt[i];
+        ht2[i]=ht[i];
+        hr2[i]=hr[i];
+    }
+    rt2.normalize();
+    ht2.normalize();
+    hr2.normalize();
 
-    float angle_h = std::acos(hr.dot(ht));//angle for the human to look at the target and the robot
-    float angle_r = std::acos((-hr).dot(rt));//idem for robot -> human
+    float angle_h = std::acos(hr2.dot(ht2));//angle for the human to look at the target and the robot
+    float angle_r = std::acos((-hr2).dot(rt2));//idem for robot -> human
     //visib = std::max(0.f,(1-visibility(i,ph))); //visibility cost (i.e. 1=worst, 0=best) of the target for the human
-    float angle_persp = std::acos((ht).dot(rt)) * visib; // perspective difference weighted by the visibility of the target
+    float angle_persp = std::acos((ht2).dot(rt2)); // perspective difference weighted by the visibility of the target
 
     float c_angle_r,c_angle_h,c_angle_persp, c_route_dir;
     c_angle_h = bounded_affine<float>(angle_h,0.,float(M_PI));
@@ -200,8 +217,17 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib, const 
 
     cost.constraint(MyConstraints::COL)=0.f;
     cost.constraint(MyConstraints::VIS) = std::max<float>(0.,visib - vis_threshold);
-    cost.cost(MyCosts::COST) = /*c_angle_r * kr +*/ c_angle_h * kh + c_angle_persp * ka + c_route_dir * (kt+ktr) + visib*kv;
+    cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - 0.52,2.) - 0.17*0.17);
+    cost.cost(MyCosts::COST) = /*c_angle_r * kr +*/ c_angle_h * kh + c_angle_persp * ka;
     cost.cost(MyCosts::TIME) = c_route_dir;
+    cost.cost(MyCosts::VISIB) = c_visib;
+
+    std::map<std::string,double> costDetails = global_costSpace->getCostDetails();
+    costDetails[target->getName()+" angle h"]=     double(180./M_PI * angle_h);
+    costDetails[target->getName()+" angle r"]=     double(180./M_PI * angle_r);
+    costDetails[target->getName()+" angle persp"]= double(180./M_PI * angle_persp);
+    costDetails[target->getName()+" visib"]=       double(visib);
+    global_costSpace->setCostDetails(std::move(costDetails));
 
     return cost;
 
@@ -209,16 +235,20 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib, const 
 
 float PlanningData::getRouteDirTime(PlanningData::Cell *, uint i)
 {
+    if(routeDirTimes.size()==0){return 0.f;}
     return routeDirTimes.at(i);
 }
 
 PlanningData::Cost PlanningData::computeCost(Cell *c){
+    global_costSpace->setCostDetails(std::map<std::string,double>{});
+    c->cost=Cell::CostType{};
     float kh(1-mh), kr(1-mr);
     float cost;
     std::vector<float> angle_h(targets.size());
     std::vector<float> angle_r(targets.size());
     std::vector<float> angle_persp(targets.size());
     std::vector<float> visib(targets.size());
+    std::vector<float> visib_rob(targets.size());
 
     Eigen::Vector3d hr = r->getHriAgent()->perspective->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
     if(hr.squaredNorm()){
@@ -228,17 +258,18 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     Eigen::Vector2d pr,ph;
     pr=c->vPosRobot();
     ph=c->vPosHuman();
-    //move agents to positions of the cell:
-    m3dGeometry::setBasePosition2D(r,pr);
-    m3dGeometry::setBasePosition2D(h,ph);
+    //move agents to positions of the cell: -> done in targetCost
+    //m3dGeometry::setBasePosition2D(r,pr);
+    //m3dGeometry::setBasePosition2D(h,ph);
 
     //for each target get its related values
     visib = getVisibilites(h,c->vPosHuman());
+    visib_rob = getVisibilites(r,c->vPosRobot());
     Cost best_target_cost;
     uint best_target{-1u};
     best_target_cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
     for (uint i=0;i<targets.size();++i){
-        Cost t = targetCost(c,i,visib[i],hr);
+        Cost t = targetCost(c,i,visib[i],visib_rob[i]);
         if(t<best_target_cost){
             best_target_cost=t;
             best_target=i;
@@ -259,8 +290,9 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
         }
         c_dist_r = std::pow(dist_r+1,kr*kd+1)-1.f;//dist robot
         c_dist_h = std::pow(dist_h+1,kh*kd+1)-1.f;//dist human
-        c_time = (dist_h + dist_target)*sh;
-        c_time_robot=dist_r*2.f*sr;
+        float time_guiding=std::max(dist_h/sh,dist_r/sr);
+        c_time = time_guiding + dist_target/sh;
+        c_time_robot=time_guiding + dist_r/sr;
 
         API::CylinderCollision cylinderCol(global_Project->getCollision());
         col = 3;
@@ -272,13 +304,15 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
 
     //cost = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka + c_dist_r * kr*kd + c_dist_h * kh*kd + c_prox * kp + c_visib * kv + c_time*kt + c_time_robot*ktr;
     //cost = cost / (kr+kh+ka+kr*kd+kh*kd+kt+kp+kv+ktr);
-    cost = ktr*c_time_robot + kt*c_time + best_target_cost.cost(MyCosts::COST);
+    cost = (1.f + ktr*c_time_robot + kt*c_time + (ktr+kt)*best_target_cost.cost(MyCosts::TIME) + kv*best_target_cost.cost(MyCosts::VISIB))
+            *
+            std::pow(best_target_cost.cost(MyCosts::COST),2.f) ;
     if(cost!=cost || cost>=std::numeric_limits<float>::max()){//nan or inf
         cost=std::numeric_limits<float>::infinity();
     }
     float time = std::max(c_time_robot,c_time) + best_target_cost.cost(MyCosts::TIME);
 
-    std::map<std::string,double> costDetails;
+    std::map<std::string,double> costDetails = global_costSpace->getCostDetails();
     //costDetails["angle h"]=     double(c_angle_h);
     //costDetails["angle r"]=     double(c_angle_r);
     //costDetails["angle persp"]= double(c_angle_persp);
@@ -289,14 +323,18 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     costDetails["proxemics"]=   double(c_prox);
     costDetails["time dir"] =   double(best_target_cost.cost(MyCosts::TIME));
     //costDetails["visib"]=       double(c_visib);
+    costDetails["target cost"]= double(best_target_cost.cost(MyCosts::COST));
     global_costSpace->setCostDetails(std::move(costDetails));
 
     c->cost.cost(MyCosts::COST)=cost;
-    c->cost.cost(MyCosts::TIME)=time;
+    c->cost.cost(MyCosts::TIME)=0.f;
 
     c->col = (col!=0);
     c->cost.constraint(MyConstraints::COL) = col;
     c->cost.constraint(MyConstraints::VIS) = best_target_cost.constraint(MyConstraints::VIS);
+    c->cost.constraint(MyConstraints::DIST) = std::max(0.f,c_prox*c_prox - dp*dp*0.2f*0.2f); // 20% * dp tolerance
+    c->cost.constraint(MyConstraints::RTIME) = std::max(0.f, c_time_robot+best_target_cost.cost(MyCosts::TIME) - max_time_r);
+    c->cost.constraint(MyConstraints::ANGLE) = best_target_cost.constraint(MyConstraints::ANGLE);
     c->vis = c->cost.constraint(MyConstraints::VIS) <=0.f; // if visib is better than ..
 
     return c->cost;
@@ -343,7 +381,9 @@ float PlanningData::computeStateCost(RobotState &q)
         Cell c(coord,pos);
         try{
             computeCost(&c);
-        }catch(std::out_of_range &){
+            setRobots(r,h,&c);
+        }catch(std::out_of_range &e){
+            M3D_DEBUG("out_of_range in PointingPlanner::PlanningData::computeStateCost "<<e.what());
             return 0.;
         }
         return c.cost.toDouble();
@@ -357,7 +397,25 @@ float PlanningData::computeStateCost(RobotState &q)
         Cell c(coord,pos);
         try{
             computeCost(&c);
-        }catch(std::out_of_range &){
+            setRobots(r,h,&c);
+        }catch(std::out_of_range &e){
+            M3D_DEBUG("out_of_range in PointingPlanner::PlanningData::computeStateCost "<<e.what());
+            return 0.;
+        }
+        return c.cost.toDouble();
+    }else{
+        Grid::ArrayCoord coord={0,0,0,0};
+        Grid::SpaceCoord pos;
+        for(unsigned int i=0;i<2;i++){
+            pos[i]=r->getCurrentPos()->at(6+i);
+            pos[i+2]=h->getCurrentPos()->at(6+i);
+        }
+        Cell c(coord,pos);
+        try{
+            computeCost(&c);
+            setRobots(r,h,&c);
+        }catch(std::out_of_range &e){
+            M3D_DEBUG("out_of_range in PointingPlanner::PlanningData::computeStateCost "<<e.what());
             return 0.;
         }
         return c.cost.toDouble();
@@ -416,7 +474,7 @@ bool PlanningData::isTooFar(Cell &c, Cell &from)
 
     if(mh<=0.f && dh>0.f) return true;// human moves with mob=0
     if(mr<=0.f && dr>0.f) return true;// robot moves with mob=0
-    if(dh>max_dist || dr>max_dist){
+    if(dh>max_dist || dr>max_dist || dr*2/sr > max_time_r){
         return true;//too far
     }else{
         return areAgentTooFarFromEachOther(c);
@@ -466,6 +524,7 @@ void PlanningData::getParameters()
     kd=API::Parameter::root(lock)["PointingPlanner"]["kdist"].asDouble();
     kv=API::Parameter::root(lock)["PointingPlanner"]["kvisib"].asDouble();
     max_dist=API::Parameter::root(lock)["PointingPlanner"]["maxdist"].asDouble();
+    max_time_r=API::Parameter::root(lock)["PointingPlanner"]["maxtime"].asDouble();
     vis_threshold=API::Parameter::root(lock)["PointingPlanner"]["vis_threshold"].asDouble();
     usePhysicalTarget=API::Parameter::root(lock)["PointingPlanner"]["use_physical_target"].asBool();
     physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();

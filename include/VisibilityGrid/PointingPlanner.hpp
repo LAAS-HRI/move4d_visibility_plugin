@@ -55,6 +55,19 @@ struct MyCost
         }
         return v;
     }
+    std::string toString(){
+        std::ostringstream oss;
+        oss<<"constr: ";
+        for(auto k : constraints){
+            oss<<k<<" ";
+        }
+        oss<<"\ncosts : ";
+        for(auto c : costs){
+            oss<<c<<" ";
+        }
+        oss<<"\n ="<<toDouble();
+        return oss.str();
+    }
 };
 
 template<typename C>
@@ -76,9 +89,10 @@ struct MyCell{
     inline Eigen::Vector2d vPosRobot() const {return Eigen::Vector2d(pos[0],pos[1]);}
     inline Eigen::Vector2d vPosHuman() const {return Eigen::Vector2d(pos[2],pos[3]);}
     MyCell(ArrayCoord coord,SpaceCoord pos):
-    open(0),
-      coord(coord),
-      pos(pos)
+        cost{},
+        coord(coord),
+        pos(pos),
+        open(0)
     {
     }
     bool operator<(const MyCell<C> &other) const {
@@ -90,9 +104,9 @@ struct PlanningData
 {
     MOVE3D_STATIC_LOGGER;
 public:
-    enum class MyConstraints {COL=0,VIS,DIST};
-    enum class MyCosts {COST=0,TIME};
-    using Cost = MyCost<3,2,MyConstraints,MyCosts>;
+    enum class MyConstraints {COL=0,VIS,DIST,RTIME,ANGLE};
+    enum class MyCosts {COST=0,TIME,VISIB};
+    using Cost = MyCost<5,3,MyConstraints,MyCosts>;
     using Cell = MyCell<Cost>;
     using Grid = typename API::nDimGrid<Cell*,4>;
 
@@ -109,7 +123,7 @@ public:
 
     inline float element(const std::vector<float> &values, float factor=1);
 
-    Cost targetCost(Cell *c, uint i, float visib, const Eigen::Vector3d &hr);
+    Cost targetCost(Cell *c, uint i, float visib, float visib_r);
     float getRouteDirTime(Cell *c, uint i);
 
     float visibility(uint target_i, const Eigen::Vector3d &pos);
@@ -145,6 +159,7 @@ public:
     float dp; //optimal distance (proxemics)
     float vis_threshold; //maximal visibility cost to consider a object is visible
     float max_dist;//maximal distance run by either agent
+    float max_time_r;//maximal time for the robot
     Robot *cyl_r;
     Robot *cyl_h;
     RobotState start_r;
