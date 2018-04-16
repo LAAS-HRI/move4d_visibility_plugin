@@ -22,6 +22,8 @@ public:
     VisibilityGrid3d *grid() const;
 
 private:
+    bool loadBinary();
+    bool loadText();
     VisibilityGrid3d *_grid=nullptr;
     static VisibilityGridLoader *__instance;
 };
