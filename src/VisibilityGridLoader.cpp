@@ -54,6 +54,7 @@ bool VisibilityGridLoader::loadBinary(){
     ifstream input;
     std::string path=DatabaseReader::getInstance()->findFile("visibility_grid_bin");
     if(path.empty()){return false;}
+    M3D_INFO("loading visibility grid from "<<path);
     input.open(path,ios::in | ios::binary);
     boost::archive::binary_iarchive ia(input);
     ia >> *_grid;
@@ -66,6 +67,7 @@ bool VisibilityGridLoader::loadText()
     ifstream input;
     std::string path=DatabaseReader::getInstance()->findFile("visibility_grid_bin.txt");
     if(path.empty()){return false;}
+    M3D_INFO("loading visibility grid from "<<path);
     input.open(path,ios::in);
     boost::archive::text_iarchive ia(input);
     ia >> *_grid;
