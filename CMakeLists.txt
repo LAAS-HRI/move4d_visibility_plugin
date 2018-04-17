@@ -27,9 +27,9 @@ if(UNIX)
 endif(UNIX)
 
 find_package(libmove3d REQUIRED)
-find_package(OGRE 1.9 REQUIRED)
+find_package(OGRE 1.9)
 find_package(move4d REQUIRED)
-find_package(move4d-gui REQUIRED)
+find_package(move4d-gui)
 find_package(Boost REQUIRED COMPONENTS serialization)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include BEFORE)
@@ -41,17 +41,25 @@ file(GLOB_RECURSE HDRS
 set(SRCS
     src/VisibilityGrid.cpp
     src/VisibilityCell.cpp
-    src/VisibilityGridCreator.cpp
     src/VisibilityGridLoader.cpp
-    src/create_entities.cpp
-    #src/VisibilityPlanner.cpp
     src/PointingPlanner.cpp
     src/PointingPlannerModule.cpp
-    src/LocationIndicatorPlanner.cpp
+    #src/VisibilityPlanner.cpp
+    #src/LocationIndicatorPlanner.cpp
 )
 
+if(move4d-gui_FOUND AND OGRE_FOUND)
+    message("building with ogre and move4d-gui")
+    list(APPEND SRCS
+    src/VisibilityGridCreator.cpp
+    src/create_entities.cpp
+    )
+    list(APPEND LIBS move4d-gui-common ${OGRE_LIBRARIES} )
+endif(move4d-gui_FOUND AND OGRE_FOUND)
+
+
 add_library(${PROJECT_NAME} SHARED ${SRCS} ${HDRS})
-target_link_libraries(${PROJECT_NAME} move4d ${LIBS} move3d move4d-gui-common ${OGRE_LIBRARIES} Boost::serialization)
+target_link_libraries(${PROJECT_NAME} move4d ${LIBS} move3d boost_serialization)
 
 add_executable(test src/test.cpp)
 target_link_libraries(test ${PROJECT_NAME})

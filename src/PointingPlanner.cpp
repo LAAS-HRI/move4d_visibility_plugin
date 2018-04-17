@@ -1,8 +1,3 @@
-#include <OGRE/Ogre.h>
-
-#include <move4d-gui/common/tools/VisibilityEngine.hpp>
-#include <move4d-gui/common/Robot.hpp>
-
 #include "VisibilityGrid/PointingPlanner.hpp"
 
 #undef  QT_LIBRARY

@@ -1,9 +1,5 @@
 #ifndef MOVE4D_POINTINGPLANNER_HPP
 #define MOVE4D_POINTINGPLANNER_HPP
-#include <OGRE/Ogre.h>
-
-#include <move4d-gui/common/tools/VisibilityEngine.hpp>
-#include <move4d-gui/common/Robot.hpp>
 
 #undef  QT_LIBRARY
 #include <move4d/API/Grids/NDGrid.hpp>
@@ -152,7 +148,6 @@ public:
     bool usePhysicalTarget;
     Eigen::Vector2d physicalTarget;///< where the human has to get in the end
     VisibilityGrid3d* visibilityGrid;
-    MoveOgre::VisibilityEngine *visibEngine;
 
     float mr,mh,sr,sh;
     float ka,kd,kt,ktr,kp,kv;//factors

@@ -1,9 +1,4 @@
-#include <OGRE/Ogre.h>
-
 #include "VisibilityGrid/PointingPlannerModule.hpp"
-
-#include <move4d-gui/common/tools/VisibilityEngine.hpp>
-#include <move4d-gui/common/Robot.hpp>
 
 #include "VisibilityGrid/PointingPlanner.hpp"
 

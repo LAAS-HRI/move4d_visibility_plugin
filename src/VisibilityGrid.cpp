@@ -1,6 +1,5 @@
 #include "VisibilityGrid/VisibilityGrid.hpp"
 #include <move4d/API/project.hpp>
-#include <move4d-gui/common/OgreBase.hpp>
 
 
 namespace move4d{
