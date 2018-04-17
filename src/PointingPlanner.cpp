@@ -59,9 +59,9 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     envSize[3]=envSize[7]=global_Project->getActiveScene()->getBounds()[3]; //y max
     bool adjust=false;
     Grid grid(cell_size,adjust,envSize);
-    Robot *r,*h;
     r=global_Project->getActiveScene()->getActiveRobot();
-    h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
+    assert(this->h);
+    //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
 
     Grid::ArrayCoord coord;
     Grid::SpaceCoord pos;
@@ -498,7 +498,7 @@ PlanningData::PlanningData(Robot *r, Robot *h):
     cyl_r = r->getObjectRob()->getCylinder();
     cyl_h = h->getObjectRob()->getCylinder();
 
-    visibEngine = new MoveOgre::VisibilityEngine(Ogre::Degree(360.f),Ogre::Degree(90.f),64u);
+    //visibEngine = new MoveOgre::VisibilityEngine(Ogre::Degree(360.f),Ogre::Degree(90.f),64u);
 
     reinit();
 
@@ -506,7 +506,7 @@ PlanningData::PlanningData(Robot *r, Robot *h):
 
 PlanningData::~PlanningData()
 {
-    delete visibEngine;
+    //delete visibEngine;
 }
 
 void PlanningData::getParameters()
@@ -529,6 +529,17 @@ void PlanningData::getParameters()
     usePhysicalTarget=API::Parameter::root(lock)["PointingPlanner"]["use_physical_target"].asBool();
     physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();
     physicalTarget[1]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][1].asDouble();
+
+    if(API::Parameter::root(lock)["PointingPlanner"].hasKey("human")){
+        std::string human_name = API::Parameter::root(lock)["PointingPlanner"]["human"].asString();
+        h = global_Project->getActiveScene()->getRobotByName(human_name);
+        if(!h){
+            M3D_ERROR("human not found ("<<human_name<<")");
+        }
+    }else{
+        M3D_ERROR("no human set");
+    }
+
 
     API::Parameter &ptargets = API::Parameter::root(lock)["PointingPlanner"]["targets"];
     targets.clear();
@@ -557,17 +568,38 @@ void PlanningData::resetFromCurrentInitPos()
     fromh[1]=start_p_h[1];
     phyTargetPos[0]=physicalTarget[0];
     phyTargetPos[1]=physicalTarget[1];
-    distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr));
-    distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh));
-    distGrid_physicalTarget= API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(phyTargetPos));
+    try{
+        distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr));
+    }catch(Grid::out_of_grid &e){
+        M3D_INFO("cannot compute the dijkstra for the robot, from "<<fromr[0]<<","<<fromr[1]);
+        throw e;
+    }
+    try{
+        distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh));
+    }catch(Grid::out_of_grid &e){
+        M3D_INFO("cannot compute the dijkstra for the human, from "<<fromh[0]<<","<<fromh[1]);
+        throw e;
+    }
+    if(usePhysicalTarget)
+    try{
+        distGrid_physicalTarget= API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(phyTargetPos));
+    }catch(Grid::out_of_grid &e){
+        M3D_INFO("cannot compute the dijkstra to the target, from "<<phyTargetPos[0]<<","<<phyTargetPos[1]);
+        throw e;
+    }
     Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance human",API::nDimGrid<float,2>(distGrid_h.getGrid()),true}));
     Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance robot",API::nDimGrid<float,2>(distGrid_r.getGrid()),true}));
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
+    if(usePhysicalTarget)
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
 }
 
 void PlanningData::reinit(){
     getParameters();
+    try{
     resetFromCurrentInitPos();
+    }catch (Grid::out_of_grid &e){
+        M3D_INFO("out of grid in PlanningData::reinit, won't work for now");
+    }
 }
 
 void PlanningData::initCollisionGrids()
