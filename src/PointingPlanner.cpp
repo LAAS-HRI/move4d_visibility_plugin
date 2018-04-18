@@ -132,6 +132,26 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
               <<"\n\tcost="<<best->cost.cost(MyCosts::COST)
               <<"\n\ttime="<<best->cost.cost(MyCosts::TIME)
               );
+    {
+    std::vector<std::string> visible_landmarks;
+    API::Parameter::lock_t lock;
+    if(targets.size()>1){
+        //check other visible targets
+        auto visib=getVisibilites(h,best->vPosHuman());
+        API::Parameter &otherVisParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["other_visible"];
+        otherVisParam=API::Parameter(API::Parameter::ArrayValue);
+        for(uint i=0;i<visib.size();++i){
+            if(i!=best->target && visib[i]<vis_threshold){
+                visible_landmarks.push_back(targets[i]->getName());
+                otherVisParam.append(targets[i]->getName());
+                M3D_DEBUG("other visible landmark: "<< targets[i]->getName());
+            }
+        }
+    }
+    API::Parameter &targetParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["target"];
+    targetParam=API::Parameter(API::Parameter::ArrayValue);
+    targetParam.append(targets[best->target]->getName());
+    }
     Cell best_copy=*best;
     for(uint i=0;i<grid.getNumberOfCells();++i){
         if(grid.getCell(i)) delete grid.getCell(i);
@@ -540,7 +560,9 @@ void PlanningData::getParameters()
     targets.clear();
     for(uint i=0;i<ptargets.size();++i){
         targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
-        assert(targets.back());//not null
+        if(!targets.back()){
+             M3D_ERROR("no object with name "<<ptargets[i].asString()<<" known to be set as a pointing target");
+        }
     }
 }
 
