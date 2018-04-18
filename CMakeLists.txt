@@ -22,7 +22,7 @@ if(UNIX)
 	  set(OGRE_SAMPLES_INCLUDEPATH "/usr/share/OGRE/samples/Common/include/") # Otherwise, this one
 
 	else ()
-	  message(SEND_ERROR "Failed to find module path.")
+        message(SEND_WARNING "Failed to find module path.")
 	endif(EXISTS "/usr/local/lib/OGRE/cmake")
 endif(UNIX)
 
