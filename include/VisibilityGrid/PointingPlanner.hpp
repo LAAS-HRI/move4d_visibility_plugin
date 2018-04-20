@@ -144,6 +144,7 @@ public:
     Robot *r;
     Robot *h;
     std::vector<Robot*> targets;
+    uint indexFirstOptionalTarget; //the targets before this index in targets are mandatory
     std::vector<float> routeDirTimes;
     bool usePhysicalTarget;
     Eigen::Vector2d physicalTarget;///< where the human has to get in the end

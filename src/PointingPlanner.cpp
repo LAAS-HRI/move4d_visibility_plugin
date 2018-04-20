@@ -242,6 +242,7 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float v
     costDetails[target->getName()+" angle r"]=     double(180./M_PI * angle_r);
     costDetails[target->getName()+" angle persp"]= double(180./M_PI * angle_persp);
     costDetails[target->getName()+" visib"]=       double(visib);
+    costDetails[target->getName()+" cost"]=       double(cost.cost(MyCosts::COST));
     global_costSpace->setCostDetails(std::move(costDetails));
 
     return cost;
@@ -281,13 +282,32 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     visib = getVisibilites(h,c->vPosHuman());
     visib_rob = getVisibilites(r,c->vPosRobot());
     Cost best_target_cost;
-    uint best_target{-1u};
+    Cost worst_target_cost;
+    Cost worst_optional_cost;
+    uint best_target{-1u}, worst_target{-1u}, worst_optional{-1u};
     best_target_cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
-    for (uint i=0;i<targets.size();++i){
+    worst_target_cost.constraint(MyConstraints::COL)=-std::numeric_limits<float>::infinity();
+    worst_optional_cost.constraint(MyConstraints::COL)=-std::numeric_limits<float>::infinity();
+    for (uint i=0;i<indexFirstOptionalTarget;++i){
         Cost t = targetCost(c,i,visib[i],visib_rob[i]);
         if(t<best_target_cost){
             best_target_cost=t;
             best_target=i;
+        }
+        if(worst_target_cost<t){
+            worst_target_cost=t;
+            worst_target=i;
+        }
+        if(worst_optional_cost<t){
+            worst_target_cost=t;
+            worst_optional=i;
+        }
+    }
+    for (uint i=indexFirstOptionalTarget;i<targets.size();++i){
+        Cost t = targetCost(c,i,visib[i],visib_rob[i]);
+        if(worst_optional_cost<t){
+            worst_optional_cost=t;
+            worst_optional=i;
         }
     }
     c->target = best_target;
@@ -319,9 +339,9 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
 
     //cost = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka + c_dist_r * kr*kd + c_dist_h * kh*kd + c_prox * kp + c_visib * kv + c_time*kt + c_time_robot*ktr;
     //cost = cost / (kr+kh+ka+kr*kd+kh*kd+kt+kp+kv+ktr);
-    cost = (1.f + ktr*c_time_robot + kt*c_time + (ktr+kt)*best_target_cost.cost(MyCosts::TIME) + kv*best_target_cost.cost(MyCosts::VISIB))
+    cost = (1.f + ktr*c_time_robot + kt*c_time + (ktr+kt)*best_target_cost.cost(MyCosts::TIME) + kv*worst_optional_cost.cost(MyCosts::VISIB))
             *
-            std::pow(best_target_cost.cost(MyCosts::COST),2.f) ;
+            (std::pow(worst_optional_cost.cost(MyCosts::COST),2.f)+std::pow(worst_target_cost.cost(MyCosts::COST),2.f)) ;
     if(cost!=cost || cost>=std::numeric_limits<float>::max()){//nan or inf
         cost=std::numeric_limits<float>::infinity();
     }
@@ -331,14 +351,14 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     //costDetails["angle h"]=     double(c_angle_h);
     //costDetails["angle r"]=     double(c_angle_r);
     //costDetails["angle persp"]= double(c_angle_persp);
-    costDetails["dist r"]=      double(c_dist_r);
-    costDetails["dist h"]=      double(c_dist_h);
-    costDetails["time human"]=  double(c_time);
-    costDetails["time robot"]=  double(c_time_robot);
-    costDetails["proxemics"]=   double(c_prox);
-    costDetails["time dir"] =   double(best_target_cost.cost(MyCosts::TIME));
+    costDetails["0dist r"]=      double(c_dist_r);
+    costDetails["0dist h"]=      double(c_dist_h);
+    costDetails["1time human"]=  double(c_time);
+    costDetails["1time robot"]=  double(c_time_robot);
+    costDetails["2proxemics"]=   double(c_prox);
+    costDetails["2time dir"] =   double(best_target_cost.cost(MyCosts::TIME));
     //costDetails["visib"]=       double(c_visib);
-    costDetails["target cost"]= double(best_target_cost.cost(MyCosts::COST));
+    costDetails["2target cost"]= double(worst_optional_cost.cost(MyCosts::COST));
     global_costSpace->setCostDetails(std::move(costDetails));
 
     c->cost.cost(MyCosts::COST)=cost;
@@ -346,10 +366,10 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
 
     c->col = (col!=0);
     c->cost.constraint(MyConstraints::COL) = col;
-    c->cost.constraint(MyConstraints::VIS) = best_target_cost.constraint(MyConstraints::VIS);
+    c->cost.constraint(MyConstraints::VIS) = worst_target_cost.constraint(MyConstraints::VIS);
     c->cost.constraint(MyConstraints::DIST) = std::max(0.f,c_prox*c_prox - dp*dp*0.2f*0.2f); // 20% * dp tolerance
     c->cost.constraint(MyConstraints::RTIME) = std::max(0.f, c_time_robot+best_target_cost.cost(MyCosts::TIME) - max_time_r);
-    c->cost.constraint(MyConstraints::ANGLE) = best_target_cost.constraint(MyConstraints::ANGLE);
+    c->cost.constraint(MyConstraints::ANGLE) = worst_target_cost.constraint(MyConstraints::ANGLE);
     c->vis = c->cost.constraint(MyConstraints::VIS) <=0.f; // if visib is better than ..
 
     return c->cost;
@@ -562,6 +582,14 @@ void PlanningData::getParameters()
         targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
         if(!targets.back()){
              M3D_ERROR("no object with name "<<ptargets[i].asString()<<" known to be set as a pointing target");
+        }
+    }
+    indexFirstOptionalTarget = targets.size();
+    API::Parameter &poptTargets = API::Parameter::root(lock)["PointingPlanner"]["optional_targets"];
+    for(uint i=0;i<poptTargets.size();++i){
+        targets.push_back(global_Project->getActiveScene()->getRobotByName(poptTargets[i].asString()));
+        if(!targets.back()){
+             M3D_ERROR("no object with name "<<poptTargets[i].asString()<<" known to be set as a pointing target");
         }
     }
 }
