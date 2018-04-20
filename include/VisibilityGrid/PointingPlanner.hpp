@@ -167,6 +167,7 @@ public:
 
     API::nDimGrid<bool,2> freespace_h,freespace_r;///< cell is true if in free space
     API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float> distGrid_h,distGrid_r,distGrid_physicalTarget;
+    float computeStateVisiblity(RobotState &state);
 };
 
 } // namespace move4d

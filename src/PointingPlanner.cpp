@@ -457,6 +457,19 @@ float PlanningData::computeStateCost(RobotState &q)
     }
     return 0.f;
 }
+float PlanningData::computeStateVisiblity(RobotState &state){
+    getParameters();
+    Robot *r=state.getRobot();
+    Eigen::Vector2d pos{state[6],state[7]};
+    std::vector<float> vis = getVisibilites(r,pos);
+    if(vis.size()){
+        M3D_INFO("visibility computed for "<<targets[0]->getName());
+        return vis[0];
+    }else if(vis.empty()){
+        M3D_ERROR("No target set");
+        return 0.;
+    }
+}
 
 void PlanningData::moveHumanToFaceTarget(Cell *c, uint target_id)
 {

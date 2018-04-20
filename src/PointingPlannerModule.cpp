@@ -72,6 +72,7 @@ void PointingPlanner::initialize()
     _data=new PlanningData(r,h);
 
     global_costSpace->addCost("PointingPlanner",boost::bind(&PlanningData::computeStateCost,_data,_1));
+    global_costSpace->addCost("PointingPlannerVisibility",boost::bind(&PlanningData::computeStateVisiblity,_data,_1));
 
 }
 
