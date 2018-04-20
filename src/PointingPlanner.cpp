@@ -167,6 +167,11 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     Graphic::DrawablePool::sAddLinkedBalls2d(balls);
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
+    if(!best_copy.cost.isValid()){
+        M3D_INFO("PointingPlanner::run invalid solution");
+        throw best_copy.cost.toDouble();
+    }
+
     return best_copy;
 }
 
@@ -299,7 +304,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
             worst_target=i;
         }
         if(worst_optional_cost<t){
-            worst_target_cost=t;
+            worst_optional_cost=t;
             worst_optional=i;
         }
     }
