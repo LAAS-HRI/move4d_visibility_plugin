@@ -163,7 +163,6 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     if(ball_values.size())
         M3D_DEBUG("balls: from "<<ball_values.front().first<<" to "<<ball_values.back().first);
 
-
     Graphic::DrawablePool::sAddLinkedBalls2d(balls);
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
@@ -237,8 +236,10 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float v
 
     cost.constraint(MyConstraints::COL)=0.f;
     cost.constraint(MyConstraints::VIS) = std::max<float>(0.,visib - vis_threshold);
-    cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - 0.52,2.) - 0.17*0.17);
-    cost.cost(MyCosts::COST) = /*c_angle_r * kr +*/ c_angle_h * kh + c_angle_persp * ka;
+    float desired_angle_h=80*M_PI/180,
+        desired_angle_h_tolerance = 15*M_PI/180;
+    cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - desired_angle_h,2.) - desired_angle_h_tolerance*desired_angle_h_tolerance);
+    cost.cost(MyCosts::COST) = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka;
     cost.cost(MyCosts::TIME) = c_route_dir;
     cost.cost(MyCosts::VISIB) = c_visib;
 
