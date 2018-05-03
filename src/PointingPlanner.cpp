@@ -236,8 +236,6 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float v
 
     cost.constraint(MyConstraints::COL)=0.f;
     cost.constraint(MyConstraints::VIS) = std::max<float>(0.,visib - vis_threshold);
-    float desired_angle_h=80*M_PI/180,
-        desired_angle_h_tolerance = 15*M_PI/180;
     cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - desired_angle_h,2.) - desired_angle_h_tolerance*desired_angle_h_tolerance);
     cost.cost(MyCosts::COST) = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka;
     cost.cost(MyCosts::TIME) = c_route_dir;
@@ -580,6 +578,8 @@ void PlanningData::getParameters()
     max_dist=API::Parameter::root(lock)["PointingPlanner"]["maxdist"].asDouble();
     max_time_r=API::Parameter::root(lock)["PointingPlanner"]["maxtime"].asDouble();
     vis_threshold=API::Parameter::root(lock)["PointingPlanner"]["vis_threshold"].asDouble();
+    desired_angle_h=API::Parameter::root(lock)["PointingPlanner"]["desired_angle_h"].asDouble();
+    desired_angle_h_tolerance=API::Parameter::root(lock)["PointingPlanner"]["desired_angle_h_tolerance"].asDouble();
     usePhysicalTarget=API::Parameter::root(lock)["PointingPlanner"]["use_physical_target"].asBool();
     physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();
     physicalTarget[1]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][1].asDouble();

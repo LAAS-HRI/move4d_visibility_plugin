@@ -62,6 +62,8 @@ void PointingPlanner::initialize()
         parameter["targets"] = API::Parameter(std::vector<API::Parameter>{global_Project->getActiveScene()->getRobot(0u)->getName()});
         parameter["use_physical_target"] = API::Parameter(false);
         parameter["physical_target_pos"] = API::Parameter(std::vector<API::Parameter>{0.,0.});
+        parameter["desired_angle_h"]=API::Parameter(80*M_PI/180);
+        parameter["desired_angle_h_tolerance"] = API::Parameter(15*M_PI/180);
     }
     lock.unlock();
 

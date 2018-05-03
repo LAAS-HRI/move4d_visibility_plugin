@@ -162,6 +162,7 @@ public:
     RobotState start_h;
     Eigen::Vector2d start_p_r;
     Eigen::Vector2d start_p_h;
+    float desired_angle_h=80*M_PI/180, desired_angle_h_tolerance = 15*M_PI/180;
 
     std::shared_ptr<move4d::Graphic::LinkedBalls2d> balls;
 
