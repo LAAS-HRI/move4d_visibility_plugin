@@ -319,19 +319,23 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     int col;
     {
         float dist_r,dist_h,dist_target{0};
+        float time_ask_to_move{0};
         std::array<float,2> ah,ar;
         ar=c->posRobot();
         ah=c->posHuman();
         dist_r=distGrid_r.getCostPos(ar);
         dist_h=distGrid_h.getCostPos(ah);
+        if(dist_h >= ask_to_move_dist_trigger){
+            time_ask_to_move += ask_to_move_duration;
+        }
         if(usePhysicalTarget){
             dist_target=distGrid_physicalTarget.getCostPos(ah);
         }
         c_dist_r = std::pow(dist_r+1,kr*kd+1)-1.f;//dist robot
         c_dist_h = std::pow(dist_h+1,kh*kd+1)-1.f;//dist human
         float time_guiding=std::max(dist_h/sh,dist_r/sr);
-        c_time = time_guiding + dist_target/sh;
-        c_time_robot=time_guiding + dist_r/sr;
+        c_time = time_guiding + dist_target/sh + time_ask_to_move;
+        c_time_robot=time_guiding + dist_r/sr + time_ask_to_move;
 
         API::CylinderCollision cylinderCol(global_Project->getCollision());
         col = 3;
@@ -583,6 +587,8 @@ void PlanningData::getParameters()
     usePhysicalTarget=API::Parameter::root(lock)["PointingPlanner"]["use_physical_target"].asBool();
     physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();
     physicalTarget[1]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][1].asDouble();
+    ask_to_move_dist_trigger = API::Parameter::root(lock)["PointingPlanner"]["ask_to_move_dist_trigger"].asDouble();
+    ask_to_move_duration = API::Parameter::root(lock)["PointingPlanner"]["ask_to_move_duration"].asDouble();
 
     if(API::Parameter::root(lock)["PointingPlanner"].hasKey("human")){
         std::string human_name = API::Parameter::root(lock)["PointingPlanner"]["human"].asString();

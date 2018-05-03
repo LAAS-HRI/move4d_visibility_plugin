@@ -64,6 +64,8 @@ void PointingPlanner::initialize()
         parameter["physical_target_pos"] = API::Parameter(std::vector<API::Parameter>{0.,0.});
         parameter["desired_angle_h"]=API::Parameter(80*M_PI/180);
         parameter["desired_angle_h_tolerance"] = API::Parameter(15*M_PI/180);
+        parameter["ask_to_move_dist_trigger"] = 0.4; // when to consider the robot will ask the human to move somewhere else
+        parameter["ask_to_move_duration"] = 10.; // the time it takes to the robot to ask the human to move and indicate them where
     }
     lock.unlock();
 

@@ -164,6 +164,8 @@ public:
     Eigen::Vector2d start_p_h;
     float desired_angle_h=80*M_PI/180, desired_angle_h_tolerance = 15*M_PI/180;
 
+    float ask_to_move_duration, ask_to_move_dist_trigger;
+
     std::shared_ptr<move4d::Graphic::LinkedBalls2d> balls;
 
     API::nDimGrid<bool,2> freespace_h,freespace_r;///< cell is true if in free space
