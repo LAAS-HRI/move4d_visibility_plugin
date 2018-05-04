@@ -485,6 +485,7 @@ void PlanningData::moveHumanToFaceTarget(Cell *c, uint target_id)
     Eigen::Vector2d ph = c->vPosHuman();
     float angle=m3dGeometry::angle(pt-ph);
     RobotState q=*h->getCurrentPos();
+    q[9]=q[10]=0.;
     q[11]=angle;
     h->setAndUpdate(q);
 }
@@ -497,6 +498,7 @@ void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
     using namespace m3dGeometry;
     float a= angle(ph-pr) + angle(pt-pr,ph-pr)/2;
     RobotState q=*r->getCurrentPos();
+    q[9]=q[10]=0.;//enforce orientation (fix due to non-zero orientation in the original position when integrated with ros)
     q[11]=a;
     r->setAndUpdate(q);
 }
