@@ -153,6 +153,7 @@ public:
     float mr,mh,sr,sh;
     float ka,kd,kt,ktr,kp,kv;//factors
     float dp; //optimal distance (proxemics)
+    float prox_tol;
     float vis_threshold; //maximal visibility cost to consider a object is visible
     float max_dist;//maximal distance run by either agent
     float max_time_r;//maximal time for the robot

@@ -375,7 +375,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     c->col = (col!=0);
     c->cost.constraint(MyConstraints::COL) = col;
     c->cost.constraint(MyConstraints::VIS) = worst_target_cost.constraint(MyConstraints::VIS);
-    c->cost.constraint(MyConstraints::DIST) = std::max(0.f,c_prox*c_prox - dp*dp*0.2f*0.2f); // 20% * dp tolerance
+    c->cost.constraint(MyConstraints::DIST) = std::max(0.f,c_prox*c_prox - prox_tol*prox_tol);
     c->cost.constraint(MyConstraints::RTIME) = std::max(0.f, c_time_robot+best_target_cost.cost(MyCosts::TIME) - max_time_r);
     c->cost.constraint(MyConstraints::ANGLE) = worst_target_cost.constraint(MyConstraints::ANGLE);
     c->vis = c->cost.constraint(MyConstraints::VIS) <=0.f; // if visib is better than ..
@@ -579,6 +579,7 @@ void PlanningData::getParameters()
     ka=API::Parameter::root(lock)["PointingPlanner"]["kangle"].asDouble();
     kp=API::Parameter::root(lock)["PointingPlanner"]["kproxemics"].asDouble();
     dp=API::Parameter::root(lock)["PointingPlanner"]["distproxemics"].asDouble();
+    prox_tol=API::Parameter::root(lock)["PointingPlanner"]["proxemics_tolerance"].asDouble();
     kd=API::Parameter::root(lock)["PointingPlanner"]["kdist"].asDouble();
     kv=API::Parameter::root(lock)["PointingPlanner"]["kvisib"].asDouble();
     max_dist=API::Parameter::root(lock)["PointingPlanner"]["maxdist"].asDouble();

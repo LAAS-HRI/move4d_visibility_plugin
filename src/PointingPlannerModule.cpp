@@ -55,6 +55,7 @@ void PointingPlanner::initialize()
         parameter["kdist"] = API::Parameter(1.);
         parameter["kproxemics"] = API::Parameter(1.);
         parameter["distproxemics"] = API::Parameter(0.75);
+        parameter["proxemics_tolerance"]=API::Parameter(0.75*0.2);
         parameter["maxdist"] = API::Parameter(3.5);
         parameter["maxtime"] = API::Parameter(60.);
         parameter["vis_threshold"] = API::Parameter(0.5);
