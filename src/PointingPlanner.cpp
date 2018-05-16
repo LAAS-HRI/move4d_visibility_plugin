@@ -588,8 +588,12 @@ void PlanningData::getParameters()
     desired_angle_h=API::Parameter::root(lock)["PointingPlanner"]["desired_angle_h"].asDouble();
     desired_angle_h_tolerance=API::Parameter::root(lock)["PointingPlanner"]["desired_angle_h_tolerance"].asDouble();
     usePhysicalTarget=API::Parameter::root(lock)["PointingPlanner"]["use_physical_target"].asBool();
-    physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();
-    physicalTarget[1]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][1].asDouble();
+    if ( API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"].type() == API::Parameter::ArrayValue){
+        physicalTarget[0]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][0].asDouble();
+        physicalTarget[1]=API::Parameter::root(lock)["PointingPlanner"]["physical_target_pos"][1].asDouble();
+    }else{
+        usePhysicalTarget=false;
+    }
     ask_to_move_dist_trigger = API::Parameter::root(lock)["PointingPlanner"]["ask_to_move_dist_trigger"].asDouble();
     ask_to_move_duration = API::Parameter::root(lock)["PointingPlanner"]["ask_to_move_duration"].asDouble();
 
