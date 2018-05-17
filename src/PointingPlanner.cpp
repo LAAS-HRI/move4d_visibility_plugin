@@ -8,6 +8,7 @@
 #include "VisibilityGrid/VisibilityGrid.hpp"
 #include "VisibilityGrid/VisibilityGridLoader.hpp"
 #include <libmove3d/util/proto/p3d_angle_proto.h>
+#include <move4d/API/exceptions.hpp>
 
 #include <move4d/API/Device/objectrob.hpp>
 #include <move4d/utils/Geometry.h>
@@ -611,17 +612,23 @@ void PlanningData::getParameters()
     API::Parameter &ptargets = API::Parameter::root(lock)["PointingPlanner"]["targets"];
     targets.clear();
     for(uint i=0;i<ptargets.size();++i){
-        targets.push_back(global_Project->getActiveScene()->getRobotByName(ptargets[i].asString()));
-        if(!targets.back()){
+        Robot *t=global_Project->getActiveScene()->getRobotByName(ptargets[i].asString());
+        if(!t){
              M3D_ERROR("no object with name "<<ptargets[i].asString()<<" known to be set as a pointing target");
+             throw API::unknown_robot(ptargets[i].asString());
+        }else{
+            targets.push_back(t);
         }
     }
     indexFirstOptionalTarget = targets.size();
     API::Parameter &poptTargets = API::Parameter::root(lock)["PointingPlanner"]["optional_targets"];
     for(uint i=0;i<poptTargets.size();++i){
-        targets.push_back(global_Project->getActiveScene()->getRobotByName(poptTargets[i].asString()));
-        if(!targets.back()){
+        Robot *t=global_Project->getActiveScene()->getRobotByName(poptTargets[i].asString());
+        if(!t){
              M3D_ERROR("no object with name "<<poptTargets[i].asString()<<" known to be set as a pointing target");
+             throw API::unknown_robot(ptargets[i].asString());
+        }else{
+            targets.push_back(t);
         }
     }
 }
