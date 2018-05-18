@@ -78,7 +78,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     start->open=true;
     grid.getCell(coord)=start;
     open_heap.push_back(start);
-    std::push_heap(open_heap.begin(),open_heap.end(),comp);
+
     Cell *best=start;
     uint count(0);
     uint iter_of_best{0};
@@ -86,15 +86,15 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     unsigned int neighbours_number = grid.neighboursNumber();
     unsigned int i=0;
     Cell *c;
+    bool found_best = false;
 
     srand (time(NULL));
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
     for(count=0;count<160000 && open_heap.size();++count){
-        std::pop_heap(open_heap.begin(),open_heap.end(),comp);
         coord = open_heap.back()->coord;
         open_heap.pop_back();
-        //std::cout<<"Current "<<current->cost<<std::endl;
+
         for (i=0;i<neighbours_number;++i)
         {
             Grid::ArrayCoord neigh=grid.getNeighbour(coord,i);
@@ -112,28 +112,36 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
                 }
 
                 if(!c->open)
+                {
                   if(isTooFar(c,start))
                     c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
 
-                if(!c->open)
-                {
-                  if(compute_cost)
-                      computeCost(c);
-
-                  if(c->col > best->col)
-                      c->open=true; //skip also if in collision (and we were not)
-                  else
+                  if(!c->open)
                   {
-                    open_heap.push_back(c);
-                    std::push_heap(open_heap.begin(),open_heap.end(),comp);
-                    c->open=true;
-                    if(c->cost < best->cost)
+                    if(compute_cost)
+                        computeCost(c);
+
+                    if(c->col > best->col)
+                        c->open=true; //skip also if in collision (and we were not)
+                    else
                     {
-                        //Cell::CostType xx=best->cost;
-                        best = c;
-                        iter_of_best=count;
-                        //setRobots(r,h,best);
-                        //std::cout << "best: "<<best->cost<<std::endl;
+                      if(!found_best)
+                        open_heap.push_back(c);
+
+                      c->open=true;
+                      if(c->cost < best->cost)
+                      {
+                          //Cell::CostType xx=best->cost;
+                          if(best->cost.toDouble() < 1000)
+                            found_best = true;
+
+                          best = c;
+                          iter_of_best=count;
+                          //setRobots(r,h,best);
+                          std::cout << "best: " << best->cost.toDouble() << " : " << best->cost.cost(MyCosts::COST) << std::endl;
+                          open_heap.clear();
+                          open_heap.push_back(c);
+                      }
                     }
                   }
                 }
