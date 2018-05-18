@@ -78,6 +78,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     start->open=true;
     grid.getCell(coord)=start;
     open_heap.push_back(start);
+    std::push_heap(open_heap.begin(),open_heap.end(),comp);
 
     Cell *best=start;
     uint count(0);
@@ -92,6 +93,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
     for(count=0;count<160000 && open_heap.size();++count){
+        //std::pop_heap(open_heap.begin(),open_heap.end(),comp);
         coord = open_heap.back()->coord;
         open_heap.pop_back();
 
@@ -126,7 +128,10 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
                     else
                     {
                       if(!found_best)
+                      {
                         open_heap.push_back(c);
+                        //std::push_heap(open_heap.begin(),open_heap.end(),comp); 
+                      }
 
                       c->open=true;
                       if(c->cost < best->cost)
@@ -139,8 +144,11 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
                           iter_of_best=count;
                           //setRobots(r,h,best);
                           std::cout << "best: " << best->cost.toDouble() << " : " << best->cost.cost(MyCosts::COST) << std::endl;
-                          open_heap.clear();
-                          open_heap.push_back(c);
+                          if(found_best)
+                          {
+                            open_heap.clear();
+                            open_heap.push_back(c);
+                          }
                       }
                     }
                   }
