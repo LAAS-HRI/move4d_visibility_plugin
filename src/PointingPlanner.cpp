@@ -130,8 +130,12 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
               <<"\ntarget: "<<targets[best->target]->getName()
               <<"\n\tCcol="<<best->cost.constraint(MyConstraints::COL)
               <<"\n\tCvis="<<best->cost.constraint(MyConstraints::VIS)
+              <<"\n\tCprox="<<best->cost.constraint(MyConstraints::DIST)
+              <<"\n\tCtime="<<best->cost.constraint(MyConstraints::RTIME)
+              <<"\n\tCang="<<best->cost.constraint(MyConstraints::ANGLE)
               <<"\n\tcost="<<best->cost.cost(MyCosts::COST)
               <<"\n\ttime="<<best->cost.cost(MyCosts::TIME)
+              <<"\n\tvisib="<<best->cost.cost(MyCosts::VISIB)
               );
     {
     std::vector<std::string> visible_landmarks;
@@ -151,6 +155,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     }
     API::Parameter &targetParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["target"];
     targetParam=API::Parameter(API::Parameter::ArrayValue);
+    M3D_DEBUG("best target: "<<targets[best->target]->getName());
     targetParam.append(targets[best->target]->getName());
     }
     Cell best_copy=*best;
@@ -371,7 +376,8 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     global_costSpace->setCostDetails(std::move(costDetails));
 
     c->cost.cost(MyCosts::COST)=cost;
-    c->cost.cost(MyCosts::TIME)=0.f;
+    c->cost.cost(MyCosts::TIME)=time;
+    c->cost.cost(MyCosts::VISIB)=worst_target_cost.cost(MyCosts::VISIB);
 
     c->col = (col!=0);
     c->cost.constraint(MyConstraints::COL) = col;
@@ -614,9 +620,10 @@ void PlanningData::getParameters()
     for(uint i=0;i<ptargets.size();++i){
         Robot *t=global_Project->getActiveScene()->getRobotByName(ptargets[i].asString());
         if(!t){
-             M3D_ERROR("no object with name "<<ptargets[i].asString()<<" known to be set as a pointing target");
-             throw API::unknown_robot(ptargets[i].asString());
+            M3D_ERROR("no object with name "<<ptargets[i].asString()<<" known to be set as a pointing target");
+            throw API::unknown_robot(ptargets[i].asString());
         }else{
+            M3D_DEBUG("target: "<<t->getName());
             targets.push_back(t);
         }
     }
@@ -625,9 +632,10 @@ void PlanningData::getParameters()
     for(uint i=0;i<poptTargets.size();++i){
         Robot *t=global_Project->getActiveScene()->getRobotByName(poptTargets[i].asString());
         if(!t){
-             M3D_ERROR("no object with name "<<poptTargets[i].asString()<<" known to be set as a pointing target");
-             throw API::unknown_robot(ptargets[i].asString());
+            M3D_ERROR("no object with name "<<poptTargets[i].asString()<<" known to be set as a pointing target");
+            throw API::unknown_robot(ptargets[i].asString());
         }else{
+            M3D_DEBUG("optional target: "<<t->getName());
             targets.push_back(t);
         }
     }
