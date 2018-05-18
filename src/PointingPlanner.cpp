@@ -20,6 +20,12 @@
 
 #include <boost/bind.hpp>
 
+#include <chrono>
+#include <stdlib.h>     /* srand, rand */
+#include <time.h>       /* time */
+
+using namespace std::chrono;
+
 namespace move4d {
 
 
@@ -53,6 +59,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     envSize[1]=envSize[5]=global_Project->getActiveScene()->getBounds()[1]; //x max
     envSize[2]=envSize[6]=global_Project->getActiveScene()->getBounds()[2]; //y min
     envSize[3]=envSize[7]=global_Project->getActiveScene()->getBounds()[3]; //y max
+
     bool adjust=false;
     Grid grid(cell_size,adjust,envSize);
     r=global_Project->getActiveScene()->getActiveRobot();
@@ -66,64 +73,100 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
         from[i]=pos[0+i]=r->getInitialPosition()->at(6+i);
         pos[2+i]=h->getInitialPosition()->at(6+i);
     }
+
     coord=grid.getCellCoord(pos);
     Cell *start=createCell(coord,grid.getCellCenter(coord));
     start->open=true;
     grid.getCell(coord)=start;
     open_heap.push_back(start);
     std::push_heap(open_heap.begin(),open_heap.end(),comp);
+
     Cell *best=start;
     uint count(0);
     uint iter_of_best{0};
+
+    unsigned int neighbours_number = grid.neighboursNumber();
+    unsigned int i=0;
+    Cell *c;
+    bool found_best = false;
+
+    srand (time(NULL));
+    high_resolution_clock::time_point t1 = high_resolution_clock::now();
+
     for(count=0;count<160000 && open_heap.size();++count){
-        std::pop_heap(open_heap.begin(),open_heap.end(),comp);
-        Cell *current= open_heap.back();
-        coord = current->coord;
+        //std::pop_heap(open_heap.begin(),open_heap.end(),comp);
+        coord = open_heap.back()->coord;
         open_heap.pop_back();
-        //std::cout<<"Current "<<current->cost<<std::endl;
-        for (unsigned int i=0;i<grid.neighboursNumber();++i){
+
+        for (i=0;i<neighbours_number;++i)
+        {
             Grid::ArrayCoord neigh=grid.getNeighbour(coord,i);
-            Cell *c;
-            try{
+            try
+            {
                 bool compute_cost=false;
                 c=grid[neigh];
-                if(!c){
+                if(!c)
+                {
                     c=new Cell(neigh,grid.getCellCenter(neigh));
-                    assert(c->cost.toDouble()==0.);
                     c->col=0.;
                     grid[neigh]=c;
                     c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
                     compute_cost=true;
                 }
-                if(isTooFar(*c,*start)){
+
+                if(!c->open)
+                {
+                  if(isTooFar(c,start))
                     c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
-                }else if(compute_cost){
-                    computeCost(c);
-                }
-                if(c->col>best->col){
-                    //skip also if in collision (and we were not)
-                    c->open=true;
-                }
-                if(!c->open){
-                    open_heap.push_back(c);
-                    balls->balls_values.push_back(std::make_pair(c->cost.toDouble(),std::vector<Eigen::Vector2d>{c->getPos(0),c->getPos(1)}));
-                    std::push_heap(open_heap.begin(),open_heap.end(),comp);
-                    c->open=true;
-                    if(c->cost < best->cost){
-                        //Cell::CostType xx=best->cost;
-                        best = c;
-                        iter_of_best=count;
-                        //setRobots(r,h,best);
-                        //std::cout << "best: "<<best->cost<<std::endl;
+
+                  if(!c->open)
+                  {
+                    if(compute_cost)
+                        computeCost(c);
+
+                    if(c->col > best->col)
+                        c->open=true; //skip also if in collision (and we were not)
+                    else
+                    {
+                      if(!found_best)
+                      {
+                        open_heap.push_back(c);
+                        //std::push_heap(open_heap.begin(),open_heap.end(),comp); 
+                      }
+
+                      c->open=true;
+                      if(c->cost < best->cost)
+                      {
+                          //Cell::CostType xx=best->cost;
+                          if(best->cost.toDouble() < 1000)
+                            found_best = true;
+
+                          best = c;
+                          iter_of_best=count;
+                          //setRobots(r,h,best);
+                          std::cout << "best: " << best->cost.toDouble() << " : " << best->cost.cost(MyCosts::COST) << std::endl;
+                          if(found_best)
+                          {
+                            open_heap.clear();
+                            open_heap.push_back(c);
+                          }
+                      }
                     }
-                    assert(best->cost <= c->cost);
+                  }
                 }
-            }catch (Grid::out_of_grid &e){
+            }
+            catch (Grid::out_of_grid &e)
+            {
                 //that's normal, just keep on going.
             }
         }
     }
     //visibEngine->finish();
+    high_resolution_clock::time_point t2 = high_resolution_clock::now();
+    duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
+
+    std::cout << "It took me " << time_span.count() << std::endl;
+
     setRobots(r,h,best);
     M3D_DEBUG("done "<<best->cost.toDouble()<<" found at iteration #"<<iter_of_best
               <<"\nit: "<<count<<" / "<<grid.getNumberOfCells()
@@ -158,18 +201,11 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     M3D_DEBUG("best target: "<<targets[best->target]->getName());
     targetParam.append(targets[best->target]->getName());
     }
+
     Cell best_copy=*best;
     for(uint i=0;i<grid.getNumberOfCells();++i){
         if(grid.getCell(i)) delete grid.getCell(i);
-    }
-    auto &ball_values = balls->balls_values;
-    using BallValue_t=std::pair<float,std::vector<Eigen::Vector2d> >;
-    std::sort(ball_values.begin(),ball_values.end(), [](const BallValue_t &a, const BallValue_t &b) {return a.first < b.first;});
-    ball_values.erase(ball_values.begin()+std::min<uint>(1000u,ball_values.size()),ball_values.end());
-    if(ball_values.size())
-        M3D_DEBUG("balls: from "<<ball_values.front().first<<" to "<<ball_values.back().first);
-
-    Graphic::DrawablePool::sAddLinkedBalls2d(balls);
+    }\
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
     if(!best_copy.cost.isValid()){
@@ -265,7 +301,8 @@ float PlanningData::getRouteDirTime(PlanningData::Cell *, uint i)
     return routeDirTimes.at(i);
 }
 
-PlanningData::Cost PlanningData::computeCost(Cell *c){
+PlanningData::Cost PlanningData::computeCost(Cell *c)
+{
     global_costSpace->setCostDetails(std::map<std::string,double>{});
     c->cost=Cell::CostType{};
     float kh(1-mh), kr(1-mr);
@@ -298,7 +335,9 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     best_target_cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
     worst_target_cost.constraint(MyConstraints::COL)=-std::numeric_limits<float>::infinity();
     worst_optional_cost.constraint(MyConstraints::COL)=-std::numeric_limits<float>::infinity();
-    for (uint i=0;i<indexFirstOptionalTarget;++i){
+
+    for (uint i=0;i<indexFirstOptionalTarget;++i)
+    {
         Cost t = targetCost(c,i,visib[i],visib_rob[i]);
         if(t<best_target_cost){
             best_target_cost=t;
@@ -313,6 +352,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
             worst_optional=i;
         }
     }
+
     for (uint i=indexFirstOptionalTarget;i<targets.size();++i){
         Cost t = targetCost(c,i,visib[i],visib_rob[i]);
         if(worst_optional_cost<t){
@@ -331,12 +371,12 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
         ah=c->posHuman();
         dist_r=distGrid_r.getCostPos(ar);
         dist_h=distGrid_h.getCostPos(ah);
-        if(dist_h >= ask_to_move_dist_trigger){
+        if(dist_h >= ask_to_move_dist_trigger)
             time_ask_to_move += ask_to_move_duration;
-        }
-        if(usePhysicalTarget){
+
+        if(usePhysicalTarget)
             dist_target=distGrid_physicalTarget.getCostPos(ah);
-        }
+
         c_dist_r = std::pow(dist_r+1,kr*kd+1)-1.f;//dist robot
         c_dist_h = std::pow(dist_h+1,kh*kd+1)-1.f;//dist human
         float time_guiding=std::max(dist_h/sh,dist_r/sr);
@@ -351,8 +391,6 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     }
     c_prox = std::abs(dp-float((pr-ph).norm())); //proxemics
 
-    //cost = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka + c_dist_r * kr*kd + c_dist_h * kh*kd + c_prox * kp + c_visib * kv + c_time*kt + c_time_robot*ktr;
-    //cost = cost / (kr+kh+ka+kr*kd+kh*kd+kt+kp+kv+ktr);
     cost = (1.f + ktr*c_time_robot + kt*c_time + (ktr+kt)*best_target_cost.cost(MyCosts::TIME) + kv*worst_optional_cost.cost(MyCosts::VISIB))
             *
             (std::pow(worst_optional_cost.cost(MyCosts::COST),2.f)+std::pow(worst_target_cost.cost(MyCosts::COST),2.f)) ;
@@ -361,7 +399,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     }
     float time = std::max(c_time_robot,c_time) + best_target_cost.cost(MyCosts::TIME);
 
-    std::map<std::string,double> costDetails = global_costSpace->getCostDetails();
+    /*std::map<std::string,double> costDetails = global_costSpace->getCostDetails();
     //costDetails["angle h"]=     double(c_angle_h);
     //costDetails["angle r"]=     double(c_angle_r);
     //costDetails["angle persp"]= double(c_angle_persp);
@@ -373,7 +411,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c){
     costDetails["2time dir"] =   double(best_target_cost.cost(MyCosts::TIME));
     //costDetails["visib"]=       double(c_visib);
     costDetails["2target cost"]= double(worst_optional_cost.cost(MyCosts::COST));
-    global_costSpace->setCostDetails(std::move(costDetails));
+    global_costSpace->setCostDetails(std::move(costDetails));*/
 
     c->cost.cost(MyCosts::COST)=cost;
     c->cost.cost(MyCosts::TIME)=time;
@@ -524,36 +562,6 @@ float PlanningData::visibility(uint target_i, const Eigen::Vector3d &pos){
     }catch(VisibilityGrid3d::out_of_grid &){
         return 0.f;
     }
-}
-
-bool PlanningData::isTooFar(Cell &c, Cell &from)
-{
-    Eigen::Vector2d pr,ph,fr,fh;
-    pr = c.getPos(0);
-    ph = c.getPos(1);
-    fr = from.getPos(0);
-    fh = from.getPos(1);
-    double dr,dh;
-    dr=(pr-fr).norm();
-    dh=(ph-fh).norm();
-
-    if(mh<=0.f && dh>0.f) return true;// human moves with mob=0
-    if(mr<=0.f && dr>0.f) return true;// robot moves with mob=0
-    if(dh>max_dist || dr>max_dist || dr*2/sr > max_time_r){
-        return true;//too far
-    }else{
-        return areAgentTooFarFromEachOther(c);
-    }
-}
-
-bool PlanningData::areAgentTooFarFromEachOther(Cell &c)
-{
-    Eigen::Vector2d pr,ph;
-    if(kp <= 0.f) return false; //ok (ignores inter agent distance)
-    pr=c.vPosRobot();
-    ph=c.vPosHuman();
-    return ((pr-ph).norm() > dp*2);
-
 }
 
 PlanningData::PlanningData(Robot *r, Robot *h):
