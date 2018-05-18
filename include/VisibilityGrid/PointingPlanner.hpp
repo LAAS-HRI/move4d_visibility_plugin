@@ -124,9 +124,8 @@ public:
 
     float visibility(uint target_i, const Eigen::Vector3d &pos);
 
-    bool isTooFar(Cell &c, Cell &from);
-
-    bool areAgentTooFarFromEachOther(Cell &c);
+    inline bool isTooFar(Cell* c, Cell* from);
+    inline bool areAgentTooFarFromEachOther(Cell* c);
 
     PlanningData(Robot *r, Robot *h);
     ~PlanningData();
@@ -173,6 +172,39 @@ public:
     API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float> distGrid_h,distGrid_r,distGrid_physicalTarget;
     float computeStateVisiblity(RobotState &state);
 };
+
+bool PlanningData::isTooFar(Cell* c, Cell* from)
+{
+    Eigen::Vector2d ph,fh;
+    fh = from->getPos(1);
+    ph = c->getPos(1);
+    double dh=(ph-fh).norm();
+    if(mh<=0.f && dh>0.f) return true;// human moves with mob=0
+    if(dh>max_dist) return true;
+
+    Eigen::Vector2d pr,fr;
+    fr = from->getPos(0);
+    pr = c->getPos(0);
+    double dr=(pr-fr).norm();
+    if(mr<=0.f && dr>0.f) return true;// robot moves with mob=0
+    if(dr>max_dist) return true;
+
+    if(dr*2/sr > max_time_r){
+        return true;//too far
+    }else{
+        return areAgentTooFarFromEachOther(c);
+    }
+}
+
+bool PlanningData::areAgentTooFarFromEachOther(Cell* c)
+{
+    if(kp <= 0.f) return false; //ok (ignores inter agent distance)
+    Eigen::Vector2d pr,ph;
+    pr=c->vPosRobot();
+    ph=c->vPosHuman();
+    return ((pr-ph).norm() > dp*2);
+
+}
 
 } // namespace move4d
 
