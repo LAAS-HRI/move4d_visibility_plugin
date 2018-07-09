@@ -167,11 +167,11 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     {
     std::vector<std::string> visible_landmarks;
     API::Parameter::lock_t lock;
+    API::Parameter &otherVisParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["other_visible"];
+    otherVisParam=API::Parameter(API::Parameter::ArrayValue);
     if(targets.size()>1){
         //check other visible targets
         auto visib=getVisibilites(h,best->vPosHuman());
-        API::Parameter &otherVisParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["other_visible"];
-        otherVisParam=API::Parameter(API::Parameter::ArrayValue);
         for(uint i=0;i<visib.size();++i){
             if(i!=best->target && visib[i]<vis_threshold){
                 visible_landmarks.push_back(targets[i]->getName());
