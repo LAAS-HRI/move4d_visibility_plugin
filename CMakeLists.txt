@@ -26,7 +26,7 @@ if(UNIX)
 	endif(EXISTS "/usr/local/lib/OGRE/cmake")
 endif(UNIX)
 
-find_package(libmove3d REQUIRED)
+find_package(move3d REQUIRED)
 find_package(OGRE 1.9)
 find_package(move4d REQUIRED)
 find_package(move4d-gui)
