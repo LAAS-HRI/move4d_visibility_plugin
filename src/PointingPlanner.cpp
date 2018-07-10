@@ -529,6 +529,7 @@ void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
     RobotState q=*r->getCurrentPos();
     q[9]=q[10]=0.;//enforce orientation (fix due to non-zero orientation in the original position when integrated with ros)
     q[11]=a;
+    M3D_DEBUG("set the robot orientation to half angle between target and human, (in deg) z-orientation="<<a*180./M_PI<<" -- the total T/R\\H angle is="<<angle(pt-pr,ph-pr)*180./M_PI<<" -- RH vector has an orientation of "<<angle(ph-pr)*180./M_PI);
     r->setAndUpdate(q);
 }
 
