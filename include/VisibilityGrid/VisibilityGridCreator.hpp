@@ -2,11 +2,13 @@
 #define VISIBILITYMODULE_HPP
 
 #include <move4d/API/moduleBase.hpp>
+#include <move4d/Logging/Logger.h>
 
 namespace move4d{
 class VisibilityGrid3d;
 class VisibilityGridCreator : public ModuleBase
 {
+    MOVE3D_STATIC_LOGGER;
 protected:
     VisibilityGridCreator();
 public:

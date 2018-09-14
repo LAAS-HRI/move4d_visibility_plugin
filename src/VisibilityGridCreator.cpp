@@ -8,12 +8,15 @@
 #include <move4d-gui/common/OgreBase.hpp>
 #include <move4d-gui/common/Robot.hpp>
 
+#include <move4d/API/Parameter.hpp>
+
 #include <jsoncpp/json/json.h>
 
 #include <iostream>
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/text_oarchive.hpp>
 
+INIT_MOVE3D_STATIC_LOGGER(move4d::VisibilityGridCreator,"move4d.visibilitygrid.creator");
 using namespace std;
 
 extern Ogre::SceneNode *createOgreEntities(Ogre::SceneManager *sceneManager, MoveOgre::Robot *robot, Ogre::SceneNode *scNodeRobot);
@@ -36,10 +39,13 @@ VisibilityGridCreator::~VisibilityGridCreator()
 
 void VisibilityGridCreator::computeVisibilities()
 {
-    MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(360.),256u); //256 pixels per 90deg
+    int pixPer90deg=API::Parameter::param<int>("VisibilityGrid/Creator/PixelPer90Deg",256);
+    MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(90.),static_cast<unsigned int>(pixPer90deg));
+    M3D_INFO("The visibility will be computed using a resolution for the rendering of "<<visibEngine.getPixelPerDegree()*90<<" pixels per 90 degrees of field of view, that is a total of "<<visibEngine.getResolution()<<" pixels per point of view (=grid cell), or "<<visibEngine.getResolution()*_grid->getNumberOfCells()<<" pixels for all the grid");
     double nb_pixel_max = visibEngine.getPixelPerDegree() * 10;
     nb_pixel_max *= nb_pixel_max;
     visibEngine.prepareScene();
+    std::cout<<"progress: (1 dot '.' = 1%)"<<std::endl;
     for(unsigned int i=0;i<_grid->getNumberOfCells();++i){
         VisibilityGrid3d::reference vis=_grid->getCell(i);
         VisibilityGrid3d::SpaceCoord center = _grid->getCellCenter(_grid->getCellCoord(i));
@@ -55,7 +61,11 @@ void VisibilityGridCreator::computeVisibilities()
         //for(auto p : visibEngine.getVisibilityCounts()){
         //    vis[p.first] = p.second /  nb_pixel_max;
         //}
+        if(i*100 % _grid->getNumberOfCells() == 0){
+            std::cout <<"."; std::cout.flush();
+        }
     }
+    std::cout<<std::endl;
     visibEngine.finish();
 
     //MoveOgre::OgreBase *base=MoveOgre::OgreBase::getInstance();
@@ -103,7 +113,7 @@ void VisibilityGridCreator::writeGridsToFile(const std::string &name){
 
 void VisibilityGridCreator::run()
 {
-    cout<<"VisibilityModule::run()"<<endl;
+    M3D_DEBUG("VisibilityModule::run()");
     //for(int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
     //    MoveOgre::Robot *r=dynamic_cast<MoveOgre::Robot*>(global_Project->getActiveScene()->getRobot(i));
     //    if(r->getName().find("SIGN") != std::string::npos){
@@ -116,12 +126,23 @@ void VisibilityGridCreator::run()
 
     bool adapt_cellsize=true;
     std::vector<double> envSize=global_Project->getActiveScene()->getBounds();
-    envSize[4]=0.8;
-    envSize[5]=2.;
-    _grid = new VisibilityGrid3d({{0.8,0.8,1.2}},adapt_cellsize,envSize);
-    std::cout<<"VisibilityGrid3d nb cell="<<_grid->getNumberOfCells()<<std::endl;
+    double minz=API::Parameter::param<double>("VisibilityGrid/Creator/MinZ",0.8);
+    double maxz=API::Parameter::param<double>("VisibilityGrid/Creator/MaxZ",2.);
+    envSize[4]=minz;
+    envSize[5]=maxz;
+    float pacexy=API::Parameter::param<double>("VisibilityGrid/Creator/StepXY",0.8);
+    float pacez =API::Parameter::param<double>("VisibilityGrid/Creator/StepZ",1.2);
+    _grid = new VisibilityGrid3d({{pacexy,pacexy,pacez}},adapt_cellsize,envSize);
+    M3D_INFO("Grid dimensions:"<<
+            "\n\tGrid origin (x,y)=\t("<<envSize[0]<<","<<envSize[2]<<")"<<
+            "\n\tGrid corner (x,y)=\t("<<envSize[1]<<","<<envSize[3]<<")"<<
+            "\n\tGrid heigh span(z)=\t"<<envSize[4]<<" -> "<<envSize[5]<<
+            "\n\tGrid Step size (x,y,z)=\t("<<pacexy<<","<<pacexy<<","<<pacez<<")"
+            );
+    M3D_INFO("VisibilityGrid3d nb cell="<<_grid->getNumberOfCells());
     computeVisibilities();
     writeGridsToFile("./data/visibility_grid_bin");
+    M3D_INFO("Visibility Grids written to ./data/visibility_grid_bin");
 
     for(unsigned int i=0;i<global_Project->getActiveScene()->getNumberOfRobots();++i){
         Robot *r= global_Project->getActiveScene()->getRobot(i);
