@@ -19,7 +19,7 @@ public:
     virtual void run() override;
 
 protected:
-    void computeVisibilities();
+    void computeVisibilities(uint nb_threads);
     void writeGridsToFile(const std::string &name);
 
 private:

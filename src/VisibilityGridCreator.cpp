@@ -15,6 +15,7 @@
 #include <iostream>
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/text_oarchive.hpp>
+#include <move4d/CTPL/ctpl.h>
 
 INIT_MOVE3D_STATIC_LOGGER(move4d::VisibilityGridCreator,"move4d.visibilitygrid.creator");
 using namespace std;
@@ -37,34 +38,64 @@ VisibilityGridCreator::~VisibilityGridCreator()
     if(_grid) delete _grid;
 }
 
-void VisibilityGridCreator::computeVisibilities()
+void _countPixels(int id,MoveOgre::VisibilityEngine::PixelImage::ptr pixels, double nb_pixel_max, VisibilityGrid3d *grid, size_t cell_index, VisibilityGrid3d::SpaceCoord cell_center, std::mutex *grid_mutex){
+    std::vector<uint> counts;
+
+    //Ogre::Image image;
+    //image = image.loadDynamicImage(static_cast<unsigned char*>(pixels->pixels.data), pixels->pixels.getWidth(),pixels->pixels.getHeight(),pixels->pixels.format);
+    //image.save("/tmp/moveogreperspective"+std::to_string(cell_index)+".png");
+
+    MoveOgre::VisibilityEngine::computeVisibilityFromImage(pixels,counts);
+
+    grid_mutex->lock();
+
+    VisibilityGrid3d::reference vis=grid->getCell(cell_index);
+    for(uint r=0;r<counts.size();++r){
+        Robot *rob = global_Project->getActiveScene()->getRobot(r);
+        vis[rob]=counts[r] / nb_pixel_max;
+    }
+    grid_mutex->unlock();
+
+    if(cell_index % size_t(std::ceil(double(grid->getNumberOfCells())/100)) == 0){
+        std::cout <<"."; std::cout.flush();
+    }
+}
+
+void VisibilityGridCreator::computeVisibilities(uint nb_threads)
 {
+    ctpl::thread_pool pool(10);
+    //std::vector<std::future<void>> results(4);
+    std::mutex grid_mutex;
     int pixPer90deg=API::Parameter::param<int>("VisibilityGrid/Creator/PixelPer90Deg",256);
     MoveOgre::VisibilityEngine visibEngine(Ogre::Degree(360.),Ogre::Degree(90.),static_cast<unsigned int>(pixPer90deg));
     M3D_INFO("The visibility will be computed using a resolution for the rendering of "<<visibEngine.getPixelPerDegree()*90<<" pixels per 90 degrees of field of view, that is a total of "<<visibEngine.getResolution()<<" pixels per point of view (=grid cell), or "<<visibEngine.getResolution()*_grid->getNumberOfCells()<<" pixels for all the grid");
     double nb_pixel_max = visibEngine.getPixelPerDegree() * 10;
     nb_pixel_max *= nb_pixel_max;
     visibEngine.prepareScene();
-    std::cout<<"progress: (1 dot '.' = 1%)"<<std::endl;
+    std::cout<<"progress: (1 dot '.' = 1%; *=rendering complete)                                                    >100%"<<std::endl;
     for(unsigned int i=0;i<_grid->getNumberOfCells();++i){
         VisibilityGrid3d::reference vis=_grid->getCell(i);
         VisibilityGrid3d::SpaceCoord center = _grid->getCellCenter(_grid->getCellCoord(i));
         Eigen::Vector3d p(center[0],center[1],center[2]);
         Eigen::Affine3d transform{Eigen::Translation3d(p)};
 
-        visibEngine.computeVisibilityFrom(transform);
+        //visibEngine.computeVisibilityFrom(transform);
+        auto pixels=visibEngine.renderSceneFrom(transform);
 
-        for(uint r=0;r<global_Project->getActiveScene()->getNumberOfRobots();++r){
-            Robot *rob = global_Project->getActiveScene()->getRobot(r);
-            vis[rob]=visibEngine.getVisibilityOf(rob) / nb_pixel_max;
-        }
+        // for(uint r=0;r<global_Project->getActiveScene()->getNumberOfRobots();++r){
+        //     Robot *rob = global_Project->getActiveScene()->getRobot(r);
+        //     vis[rob]=visibEngine.getVisibilityOf(rob) / nb_pixel_max;
+        // }
+
+        pool.push(_countPixels, pixels,nb_pixel_max,_grid,i,center,&grid_mutex);
+        //f.get();
+        //_countPixels(0,pixels,nb_pixel_max,_grid,i,&grid_mutex);
         //for(auto p : visibEngine.getVisibilityCounts()){
         //    vis[p.first] = p.second /  nb_pixel_max;
         //}
-        if(i*100 % _grid->getNumberOfCells() == 0){
-            std::cout <<"."; std::cout.flush();
-        }
     }
+    std::cout<<"*";std::cout.flush();
+    pool.stop(/*wait = */ true); //wait for execution to be done.
     std::cout<<std::endl;
     visibEngine.finish();
 
@@ -132,6 +163,7 @@ void VisibilityGridCreator::run()
     envSize[5]=maxz;
     float pacexy=API::Parameter::param<double>("VisibilityGrid/Creator/StepXY",0.8);
     float pacez =API::Parameter::param<double>("VisibilityGrid/Creator/StepZ",1.2);
+    uint nb_threads =API::Parameter::param<int>("VisibilityGrid/Creator/ThreadNumber",4);
     _grid = new VisibilityGrid3d({{pacexy,pacexy,pacez}},adapt_cellsize,envSize);
     M3D_INFO("Grid dimensions:"<<
             "\n\tGrid origin (x,y)=\t("<<envSize[0]<<","<<envSize[2]<<")"<<
@@ -139,8 +171,9 @@ void VisibilityGridCreator::run()
             "\n\tGrid heigh span(z)=\t"<<envSize[4]<<" -> "<<envSize[5]<<
             "\n\tGrid Step size (x,y,z)=\t("<<pacexy<<","<<pacexy<<","<<pacez<<")"
             );
+    M3D_INFO("Using "<<nb_threads<<" threads");
     M3D_INFO("VisibilityGrid3d nb cell="<<_grid->getNumberOfCells());
-    computeVisibilities();
+    computeVisibilities(nb_threads);
     writeGridsToFile("./data/visibility_grid_bin");
     M3D_INFO("Visibility Grids written to ./data/visibility_grid_bin");
 
