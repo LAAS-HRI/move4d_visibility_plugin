@@ -107,9 +107,10 @@ public:
     using Grid = typename API::nDimGrid<Cell*,4>;
 
     Cell run(bool read_parameters=true);
+    Cell* searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid &grid, Grid::SpaceCoord pos);
     Cell *createCell(Grid::ArrayCoord coord,Grid::SpaceCoord pos);
     void setRobots(Robot *a,Robot *b, Cell *cell);
-    Cost computeCost(Cell *c);
+    Cost computeCost(Cell *c, bool ignore_agent_agent=false /*if true ignore robot/human collision and proxemics*/);
     std::vector<float> getVisibilites(Robot *r, const Eigen::Vector2d &pos2d);
 
     float computeStateCost(RobotState &q);
@@ -119,7 +120,7 @@ public:
 
     inline float element(const std::vector<float> &values, float factor=1);
 
-    Cost targetCost(Cell *c, uint i, float visib, float visib_r);
+    Cost targetCost(Cell *c, uint i, float visib, float visib_r, bool ignore_agent_agent=false);
     float getRouteDirTime(Cell *c, uint i);
 
     float visibility(uint target_i, const Eigen::Vector3d &pos);
@@ -168,6 +169,7 @@ public:
 
     std::shared_ptr<move4d::Graphic::LinkedBalls2d> balls;
 
+    static Grid::ArrayCoord getNeighbour2dHuman(Grid::ArrayCoord coord, size_t ith_neigh);
     API::nDimGrid<bool,2> freespace_h,freespace_r;///< cell is true if in free space
     API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float> distGrid_h,distGrid_r,distGrid_physicalTarget;
     float computeStateVisiblity(RobotState &state);

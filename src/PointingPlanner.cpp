@@ -24,6 +24,8 @@
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
 
+#define SEARCH_2D_FIRST true
+
 using namespace std::chrono;
 
 namespace move4d {
@@ -51,22 +53,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     std::vector<Cell*> open_heap;
     VisibilityGrid3d::SpaceCoord vis_cell_size=vis_grid->getCellSize();
     //API::MultiGrid<float,vis_size[0],vis_size[1],vis_size[0],vis_size[1]> grid;
-    Grid::SpaceCoord cell_size;
-    cell_size[0]=cell_size[2]=vis_cell_size[0];
-    cell_size[1]=cell_size[3]=vis_cell_size[1];
-    std::vector<double> envSize(8,0.);
-    envSize[0]=envSize[4]=global_Project->getActiveScene()->getBounds()[0]; //x min
-    envSize[1]=envSize[5]=global_Project->getActiveScene()->getBounds()[1]; //x max
-    envSize[2]=envSize[6]=global_Project->getActiveScene()->getBounds()[2]; //y min
-    envSize[3]=envSize[7]=global_Project->getActiveScene()->getBounds()[3]; //y max
 
-    bool adjust=false;
-    Grid grid(cell_size,adjust,envSize);
-    r=global_Project->getActiveScene()->getActiveRobot();
-    assert(this->h);
-    //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
-
-    Grid::ArrayCoord coord;
     Grid::SpaceCoord pos;
     Eigen::Vector2d from;
     for(uint i=0;i<2;++i){
@@ -74,8 +61,41 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
         pos[2+i]=h->getInitialPosition()->at(6+i);
     }
 
-    coord=grid.getCellCoord(pos);
-    Cell *start=createCell(coord,grid.getCellCenter(coord));
+    Grid::SpaceCoord cell_size;
+    cell_size[0]=cell_size[2]=vis_cell_size[0];
+    cell_size[1]=cell_size[3]=vis_cell_size[1];
+    std::vector<double> envSize(8,0.);
+    {
+    std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
+    for(uint i=0;i<2;++i){
+        envSize0[2*i+0]=std::max(from[i] - max_dist , envSize0[2*i+0]);
+        envSize0[2*i+1]=std::min(from[i] + max_dist , envSize0[2*i+1]);
+    }
+    envSize[0]=envSize[4]=envSize0[0]; //x min
+    envSize[1]=envSize[5]=envSize0[1]; //x max
+    envSize[2]=envSize[6]=envSize0[2]; //y min
+    envSize[3]=envSize[7]=envSize0[3]; //y max
+    }
+
+    bool adjust=false;
+    bool search2dfirst=SEARCH_2D_FIRST;
+    Grid grid(cell_size,adjust,envSize);
+    r=global_Project->getActiveScene()->getActiveRobot();
+    assert(this->h);
+    //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
+
+    Grid::ArrayCoord coord;
+    Cell *start;
+    if(search2dfirst){
+        start = this->searchHumanPositionOnly(vis_grid,grid,pos);
+        coord = start->coord;
+        start->col=1;
+        computeCost(start);
+    }else{
+        coord=grid.getCellCoord(pos);
+        start=createCell(coord,grid.getCellCenter(coord));
+    }
+
     start->open=true;
     grid.getCell(coord)=start;
     open_heap.push_back(start);
@@ -91,7 +111,9 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     srand (time(NULL));
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
-    for(count=0;count<160000 && open_heap.size();++count){
+    uint max_iter=1600000;
+    if(search2dfirst) max_iter=10000;
+    for(count=0;count<max_iter && open_heap.size();++count){
         std::pop_heap(open_heap.begin(),open_heap.end(),comp);
         coord = open_heap.back()->coord;
         open_heap.pop_back();
@@ -189,15 +211,184 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     Cell best_copy=*best;
     for(uint i=0;i<grid.getNumberOfCells();++i){
         if(grid.getCell(i)) delete grid.getCell(i);
-    }\
+    }
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
     if(!best_copy.cost.isValid()){
         M3D_INFO("PointingPlanner::run invalid solution");
-        throw best_copy.cost.toDouble();
+        //throw best_copy.cost.toDouble();
     }
 
     return best_copy;
+}
+
+PlanningData::Grid::ArrayCoord PlanningData::getNeighbour2dHuman(Grid::ArrayCoord coord, size_t ith_neigh){
+    const unsigned int totDirections=8;
+    const unsigned int dimension = 2;
+
+
+    assert( ith_neigh>=0 && ith_neigh<totDirections );
+    if(ith_neigh>=(totDirections/2)) ith_neigh++; // it would be  the cell itself
+
+    int coeff=1;
+
+    Grid::ArrayCoord NeighboorCoord = coord;
+
+    for (int i=0; i<dimension; i++)
+    {
+        NeighboorCoord[i+2] = coord[i+2] + ((ith_neigh/coeff) % 3 - 1);
+        coeff *= 3;
+    }
+
+    return NeighboorCoord;
+}
+
+PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid &grid, Grid::SpaceCoord pos)
+{
+    M3D_DEBUG("PointingPlanner::searchHumanPositionOnly start");
+    CompareCellPtr comp;
+    std::vector<Cell*> open_heap;
+    VisibilityGrid3d::SpaceCoord vis_cell_size=vis_grid->getCellSize();
+
+    bool adjust=false;
+    r=global_Project->getActiveScene()->getActiveRobot();
+    assert(this->h);
+    //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
+
+    Grid::ArrayCoord coord;
+    Eigen::Vector2d from;
+    for(uint i=0;i<2;++i){
+        from[i]=pos[0+i]=pos[2+i]; // PUT BOTH AGENTS AT THE HUMAN LOCATION
+    }
+    coord=grid.getCellCoord(pos);
+    Cell *start=createCell(coord,grid.getCellCenter(coord));
+    start->open=true;
+    grid.getCell(coord)=start;
+    open_heap.push_back(start);
+    std::push_heap(open_heap.begin(),open_heap.end(),comp);
+    Cell *best=start;
+    uint count(0);
+    uint iter_of_best{0};
+
+    unsigned int neighbours_number = 8;//grid.neighboursNumber();
+    unsigned int i=0;
+    Cell *c;
+
+    srand (time(NULL));
+    high_resolution_clock::time_point t1 = high_resolution_clock::now();
+
+    API::nDimGrid<float,2> costGrid({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
+    API::nDimGrid<float,2> visGrid(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
+    for(count=0;count<160000 && open_heap.size();++count){
+        std::pop_heap(open_heap.begin(),open_heap.end(),comp);
+        coord = open_heap.back()->coord;
+        open_heap.pop_back();
+        //std::cout<<"Current "<<current->cost<<std::endl;
+        for (i=0;i<neighbours_number;++i)
+        {
+            Grid::ArrayCoord neigh=this->getNeighbour2dHuman(coord,i);
+            for(uint i=0;i<2;++i){
+                neigh[0+i]=neigh[2+i]; // PUT BOTH AGENTS AT THE HUMAN LOCATION
+            }
+            try
+            {
+                bool compute_cost=false;
+                c=grid[neigh];
+                if(!c)
+                {
+                    c=new Cell(neigh,grid.getCellCenter(neigh));
+                    c->col=0.;
+                    grid[neigh]=c;
+                    c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
+                    compute_cost=true;
+                }
+
+                if(!c->open)
+                  if(isTooFar(c,start))
+                    c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
+
+                if(!c->open)
+                {
+                  if(compute_cost)
+                      computeCost(c,true);
+                  costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
+                  visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+
+                  if(c->col > best->col)
+                      c->open=true; //skip also if in collision (and we were not)
+                  else
+                  {
+                    open_heap.push_back(c);
+                    std::push_heap(open_heap.begin(),open_heap.end(),comp);
+                    c->open=true;
+                    if(c->cost < best->cost)
+                    {
+                        //Cell::CostType xx=best->cost;
+                        best = c;
+                        iter_of_best=count;
+                        //setRobots(r,h,best);
+                        //std::cout << "best: "<<best->cost<<std::endl;
+                    }
+                  }
+                }
+            }
+            catch (Grid::out_of_grid &e)
+            {
+                //that's normal, just keep on going.
+            }
+        }
+    }
+    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dCost",costGrid,true}));
+    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dVis",visGrid,true}));
+    //visibEngine->finish();
+    high_resolution_clock::time_point t2 = high_resolution_clock::now();
+    duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
+
+    std::cout << "It took me " << time_span.count() << std::endl;
+
+    setRobots(r,h,best);
+    M3D_DEBUG("done "<<best->cost.toDouble()<<" found at iteration #"<<iter_of_best
+              <<"\nit: "<<count<<" / "<<std::sqrt(grid.getNumberOfCells()) // number of cells is only in 2D here, instead of 4D
+              <<"\ntarget: "<<targets[best->target]->getName()
+              <<"\n\tCcol="<<best->cost.constraint(MyConstraints::COL)
+              <<"\n\tCvis="<<best->cost.constraint(MyConstraints::VIS)
+              <<"\n\tCprox="<<best->cost.constraint(MyConstraints::DIST)
+              <<"\n\tCtime="<<best->cost.constraint(MyConstraints::RTIME)
+              <<"\n\tCang="<<best->cost.constraint(MyConstraints::ANGLE)
+              <<"\n\tcost="<<best->cost.cost(MyCosts::COST)
+              <<"\n\ttime="<<best->cost.cost(MyCosts::TIME)
+              <<"\n\tvisib="<<best->cost.cost(MyCosts::VISIB)
+              );
+    {
+    std::vector<std::string> visible_landmarks;
+    API::Parameter::lock_t lock;
+    API::Parameter &otherVisParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["other_visible"];
+    otherVisParam=API::Parameter(API::Parameter::ArrayValue);
+    if(targets.size()>1){
+        //check other visible targets
+        auto visib=getVisibilites(h,best->vPosHuman());
+        for(uint i=0;i<visib.size();++i){
+            if(i!=best->target && visib[i]<vis_threshold){
+                visible_landmarks.push_back(targets[i]->getName());
+                otherVisParam.append(targets[i]->getName());
+                M3D_DEBUG("other visible landmark: "<< targets[i]->getName());
+            }
+        }
+    }
+    API::Parameter &targetParam = API::Parameter::root(lock)["PointingPlanner"]["result"]["target"];
+    targetParam=API::Parameter(API::Parameter::ArrayValue);
+    M3D_DEBUG("best target: "<<targets[best->target]->getName());
+    targetParam.append(targets[best->target]->getName());
+    }
+
+    ENV.setBool(Env::isRunning,false);
+    M3D_DEBUG("PointingPlanner::run end");
+    if(!best->cost.isValid()){
+        M3D_INFO("PointingPlanner::searchHumanPositionOnly invalid solution");
+        //throw best_copy.cost.toDouble();
+    }
+
+    return best;
 }
 
 PlanningData::Cell *PlanningData::createCell(Grid::ArrayCoord coord, Grid::SpaceCoord pos){
@@ -223,7 +414,7 @@ void PlanningData::setRobots(Robot *a, Robot *b, Cell *cell){
     moveRobotToHalfAngle(cell,cell->target);
 }
 
-PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float visib_r)
+PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float visib_r, bool ignore_agent_agent)
 {
     visib = std::max(visib,visib_r);
     visib = std::max(0.f,visib);
@@ -248,21 +439,28 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float v
     ht2.normalize();
     hr2.normalize();
 
-    float angle_h = std::acos(hr2.dot(ht2));//angle for the human to look at the target and the robot
-    float angle_r = std::acos((-hr2).dot(rt2));//idem for robot -> human
-    //visib = std::max(0.f,(1-visibility(i,ph))); //visibility cost (i.e. 1=worst, 0=best) of the target for the human
-    float angle_persp = std::acos((ht2).dot(rt2)); // perspective difference weighted by the visibility of the target
+    float angle_h{},angle_r{},angle_persp{};
+    float c_angle_r{},c_angle_h{},c_angle_persp{}, c_route_dir{};
+    if(!ignore_agent_agent){
+        angle_h = std::acos(hr2.dot(ht2));//angle for the human to look at the target and the robot
+        angle_r = std::acos((-hr2).dot(rt2));//idem for robot -> human
+        //visib = std::max(0.f,(1-visibility(i,ph))); //visibility cost (i.e. 1=worst, 0=best) of the target for the human
+        angle_persp = std::acos((ht2).dot(rt2)); // perspective difference weighted by the visibility of the target
 
-    float c_angle_r,c_angle_h,c_angle_persp, c_route_dir;
-    c_angle_h = bounded_affine<float>(angle_h,0.,float(M_PI));
-    c_angle_r = bounded_affine<float>(angle_r,0,float(M_PI));
-    c_angle_persp = bounded_affine<float>(angle_persp,0,float(M_PI)); //perspective difference
+        c_angle_h = bounded_affine<float>(angle_h,0.,float(M_PI));
+        c_angle_r = bounded_affine<float>(angle_r,0,float(M_PI));
+        c_angle_persp = bounded_affine<float>(angle_persp,0,float(M_PI)); //perspective difference
+    }
+
 
     c_route_dir=getRouteDirTime(c,i);
 
     cost.constraint(MyConstraints::COL)=0.f;
     cost.constraint(MyConstraints::VIS) = std::max<float>(0.,visib - vis_threshold);
-    cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - desired_angle_h,2.) - desired_angle_h_tolerance*desired_angle_h_tolerance);
+    if(ignore_agent_agent)
+        cost.constraint(MyConstraints::ANGLE) = 0.f;
+    else
+        cost.constraint(MyConstraints::ANGLE) = std::max<float>(0., std::pow(angle_h - desired_angle_h,2.) - desired_angle_h_tolerance*desired_angle_h_tolerance);
     cost.cost(MyCosts::COST) = c_angle_r * kr + c_angle_h * kh + c_angle_persp * ka;
     cost.cost(MyCosts::TIME) = c_route_dir;
     cost.cost(MyCosts::VISIB) = c_visib;
@@ -285,7 +483,7 @@ float PlanningData::getRouteDirTime(PlanningData::Cell *, uint i)
     return routeDirTimes.at(i);
 }
 
-PlanningData::Cost PlanningData::computeCost(Cell *c)
+PlanningData::Cost PlanningData::computeCost(Cell *c,bool ignore_agent_agent)
 {
     global_costSpace->setCostDetails(std::map<std::string,double>{});
     c->cost=Cell::CostType{};
@@ -322,7 +520,7 @@ PlanningData::Cost PlanningData::computeCost(Cell *c)
 
     for (uint i=0;i<indexFirstOptionalTarget;++i)
     {
-        Cost t = targetCost(c,i,visib[i],visib_rob[i]);
+        Cost t = targetCost(c,i,visib[i],visib_rob[i],ignore_agent_agent);
         if(t<best_target_cost){
             best_target_cost=t;
             best_target=i;
@@ -371,13 +569,19 @@ PlanningData::Cost PlanningData::computeCost(Cell *c)
         col = 3;
         col -= int(freespace_h.getCell(ah));
         col -= int(freespace_r.getCell(ar));
-        col -= int(cylinderCol.moveCheck(r,Eigen::Vector3d(pr[0],pr[1],0.),h,Eigen::Vector3d(ph[0],ph[1],0.)));
+        if(!ignore_agent_agent)
+            col -= int(cylinderCol.moveCheck(r,Eigen::Vector3d(pr[0],pr[1],0.),h,Eigen::Vector3d(ph[0],ph[1],0.)));
+        else
+            col-=1;
     }
-    c_prox = std::abs(dp-float((pr-ph).norm())); //proxemics
+    if(!ignore_agent_agent)
+        c_prox = std::abs(dp-float((pr-ph).norm())); //proxemics
+    else
+        c_prox=0;
 
     cost = (1.f + ktr*c_time_robot + kt*c_time + (ktr+kt)*best_target_cost.cost(MyCosts::TIME) + kv*worst_optional_cost.cost(MyCosts::VISIB))
             *
-            (std::pow(worst_optional_cost.cost(MyCosts::COST),2.f)+std::pow(worst_target_cost.cost(MyCosts::COST),2.f)) ;
+            (1.f+std::pow(worst_optional_cost.cost(MyCosts::COST),2.f)+std::pow(worst_target_cost.cost(MyCosts::COST),2.f)) ;
     if(cost!=cost || cost>=std::numeric_limits<float>::max()){//nan or inf
         cost=std::numeric_limits<float>::infinity();
     }
@@ -529,7 +733,7 @@ void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
     RobotState q=*r->getCurrentPos();
     q[9]=q[10]=0.;//enforce orientation (fix due to non-zero orientation in the original position when integrated with ros)
     q[11]=a;
-    M3D_DEBUG("set the robot orientation to half angle between target and human, (in deg) z-orientation="<<a*180./M_PI<<" -- the total T/R\\H angle is="<<angle(pt-pr,ph-pr)*180./M_PI<<" -- RH vector has an orientation of "<<angle(ph-pr)*180./M_PI);
+    M3D_TRACE("set the robot orientation to half angle between target and human, (in deg) z-orientation="<<a*180./M_PI<<" -- the total T/R\\H angle is="<<angle(pt-pr,ph-pr)*180./M_PI<<" -- RH vector has an orientation of "<<angle(ph-pr)*180./M_PI);
     r->setAndUpdate(q);
 }
 
