@@ -277,8 +277,11 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
     srand (time(NULL));
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
-    API::nDimGrid<float,2> costGrid({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
-    API::nDimGrid<float,2> visGrid(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
+    API::nDimGrid<float,2> costGrid,visGrid;
+    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+        costGrid=API::nDimGrid<float,2>({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
+        visGrid=API::nDimGrid<float,2>(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
+    }
     for(count=0;count<160000 && open_heap.size();++count){
         std::pop_heap(open_heap.begin(),open_heap.end(),comp);
         coord = open_heap.back()->coord;
@@ -311,8 +314,10 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
                 {
                   if(compute_cost)
                       computeCost(c,true);
-                  costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
-                  visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+                  M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+                      costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
+                      visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+                  }
 
                   if(c->col > best->col)
                       c->open=true; //skip also if in collision (and we were not)
@@ -338,8 +343,10 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
             }
         }
     }
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dCost",costGrid,true}));
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dVis",visGrid,true}));
+    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dCost",costGrid,true}));
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dVis",visGrid,true}));
+    }
     //visibEngine->finish();
     high_resolution_clock::time_point t2 = high_resolution_clock::now();
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
@@ -876,10 +883,12 @@ void PlanningData::resetFromCurrentInitPos()
         M3D_INFO("cannot compute the dijkstra to the target, from "<<phyTargetPos[0]<<","<<phyTargetPos[1]);
         throw e;
     }
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance human",API::nDimGrid<float,2>(distGrid_h.getGrid()),true}));
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance robot",API::nDimGrid<float,2>(distGrid_r.getGrid()),true}));
-    if(usePhysicalTarget)
-        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
+    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance human",API::nDimGrid<float,2>(distGrid_h.getGrid()),true}));
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance robot",API::nDimGrid<float,2>(distGrid_r.getGrid()),true}));
+        if(usePhysicalTarget)
+            Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
+    }
 }
 
 void PlanningData::reinit(){
@@ -908,8 +917,10 @@ void PlanningData::initCollisionGrids()
     initCollisionGrid(freespace_h,h);
     initCollisionGrid(freespace_r,r);
 
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"collision human",API::nDimGrid<float,2>(freespace_h)}));
-    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"collision robot",API::nDimGrid<float,2>(freespace_r)}));
+    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"collision human",API::nDimGrid<float,2>(freespace_h)}));
+        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"collision robot",API::nDimGrid<float,2>(freespace_r)}));
+    }
 }
 
 void PlanningData::initCollisionGrid(API::nDimGrid<bool,2> &grid, Robot *a)
