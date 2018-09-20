@@ -438,6 +438,7 @@ PlanningData::Cell *PlanningData::createCell(Grid::ArrayCoord coord, Grid::Space
 }
 
 void PlanningData::setRobots(Robot *a, Robot *b, Cell *cell){
+    Eigen::Vector3d r_persp_joint_pos, h_persp_joint_pos;
     RobotState qa,qb;
     qa=*a->getCurrentPos();
     qb=*b->getCurrentPos();
@@ -449,8 +450,12 @@ void PlanningData::setRobots(Robot *a, Robot *b, Cell *cell){
     qb.setCost(cell->cost.toDouble());
     a->setAndUpdate(qa);
     b->setAndUpdate(qb);
-    moveHumanToFaceTarget(cell,cell->target);
-    moveRobotToHalfAngle(cell,cell->target);
+    moveHumanToFaceTarget(cell,h_persp_joint_pos,cell->target);
+    moveRobotToHalfAngle(cell,r_persp_joint_pos, cell->target);
+}
+Eigen::Vector3d PlanningData::approxPerspJointPos(const Eigen::Vector2d &pos, double perspHeight) const
+{
+    return Eigen::Vector3d(pos[0],pos[1],perspHeight);
 }
 
 PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float visib_r, bool ignore_agent_agent)
@@ -463,12 +468,13 @@ PlanningData::Cost PlanningData::targetCost(Cell *c, uint i, float visib,float v
     c_visib*=c_visib;
     Eigen::Vector3d rt,ht,hr;
     Eigen::Vector2d rt2,ht2,hr2;
+    Eigen::Vector3d hpersp(approxPerspJointPos(c->vPosHuman(),hum_persp_height));
+    Eigen::Vector3d rpersp(approxPerspJointPos(c->vPosRobot(),rob_persp_height));
     Robot *target=targets[i];
     c->target = i; //used by setRobots
-    this->setRobots(r,h,c);
-    rt =  target->getJoint(0)->getVectorPos() - r->getHriAgent()->perspective->getVectorPos();
-    ht =  target->getJoint(0)->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
-    hr = r->getHriAgent()->perspective->getVectorPos() - h->getHriAgent()->perspective->getVectorPos();
+    rt =  target->getJoint(0)->getVectorPos() - rpersp;
+    ht =  target->getJoint(0)->getVectorPos() - hpersp;
+    hr = rpersp - hpersp;
     for(uint i=0;i<2;++i){
         rt2[i]=rt[i];
         ht2[i]=ht[i];
@@ -751,18 +757,21 @@ float PlanningData::computeStateVisiblity(RobotState &state){
     }
 }
 
-void PlanningData::moveHumanToFaceTarget(Cell *c, uint target_id)
+void PlanningData::moveHumanToFaceTarget(Cell *c, Eigen::Vector3d &persp_joint_pos, uint target_id)
 {
     Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
     Eigen::Vector2d ph = c->vPosHuman();
     float angle=m3dGeometry::angle(pt-ph);
     RobotState q=*h->getCurrentPos();
+    q.setCost(c->cost.toDouble());
+    q[6]=ph[0]; q[7]=ph[1];
     q[9]=q[10]=0.;
     q[11]=angle;
     h->setAndUpdate(q);
+    persp_joint_pos  =  h->getHriAgent()->perspective->getVectorPos();
 }
 
-void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
+void PlanningData::moveRobotToHalfAngle(Cell *c, Eigen::Vector3d &persp_joint_pos, uint target_id)
 {
     Eigen::Vector2d pt = m3dGeometry::getConfBase2DPos(*targets[target_id]->getCurrentPos());
     Eigen::Vector2d ph(c->vPosHuman());
@@ -770,10 +779,13 @@ void PlanningData::moveRobotToHalfAngle(Cell *c, uint target_id)
     using namespace m3dGeometry;
     float a= angle(ph-pr) + angle(pt-pr,ph-pr)/2;
     RobotState q=*r->getCurrentPos();
+    q.setCost(c->cost.toDouble());
+    q[6]=pr[0];q[7]=pr[1];
     q[9]=q[10]=0.;//enforce orientation (fix due to non-zero orientation in the original position when integrated with ros)
     q[11]=a;
     M3D_TRACE("set the robot orientation to half angle between target and human, (in deg) z-orientation="<<a*180./M_PI<<" -- the total T/R\\H angle is="<<angle(pt-pr,ph-pr)*180./M_PI<<" -- RH vector has an orientation of "<<angle(ph-pr)*180./M_PI);
     r->setAndUpdate(q);
+    persp_joint_pos  =  r->getHriAgent()->perspective->getVectorPos();
 }
 
 float PlanningData::element(const std::vector<float> &values, float factor){

@@ -111,13 +111,14 @@ public:
     Cell searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid::SpaceCoord cellSize4d, std::vector<double> envSize4d, Grid::SpaceCoord pos);
     Cell *createCell(Grid::ArrayCoord coord,Grid::SpaceCoord pos);
     void setRobots(Robot *a,Robot *b, Cell *cell);
+    Eigen::Vector3d approxPerspJointPos(const Eigen::Vector2d &pos, double perspHeight) const;
     Cost computeCost(Cell *c, bool ignore_agent_agent=false /*if true ignore robot/human collision and proxemics*/);
     std::vector<float> getVisibilites(Robot *r, const Eigen::Vector2d &pos2d);
 
     float computeStateCost(RobotState &q);
 
-    void moveHumanToFaceTarget(Cell *c, uint target_id=0);
-    void moveRobotToHalfAngle(Cell *c, uint target_id=0);
+    void moveHumanToFaceTarget(Cell *c, Eigen::Vector3d &persp_joint_pos, uint target_id=0);
+    void moveRobotToHalfAngle(Cell *c, Eigen::Vector3d &persp_joint_pos, uint target_id=0);
 
     inline float element(const std::vector<float> &values, float factor=1);
 
@@ -144,6 +145,7 @@ public:
 
     Robot *r;
     Robot *h;
+    float rob_persp_height, hum_persp_height;///< heights of the perspective joints of the agents
     std::vector<Robot*> targets;
     uint indexFirstOptionalTarget; //the targets before this index in targets are mandatory
     std::vector<float> routeDirTimes;
