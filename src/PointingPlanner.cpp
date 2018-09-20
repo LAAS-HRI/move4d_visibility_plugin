@@ -46,13 +46,13 @@ struct CompareCellPtr
 PlanningData::Cell PlanningData::run(bool read_parameters)
 {
     M3D_DEBUG("PointingPlanner::run start");
+    ctpl::thread_pool pool(10);
     ENV.setBool(Env::isRunning,true);
     if(read_parameters) getParameters();
     this->resetFromCurrentInitPos();
     balls->balls_values.clear();
     VisibilityGrid3d *vis_grid=dynamic_cast<VisibilityGridLoader*>(ModuleRegister::getInstance()->module(VisibilityGridLoader::name()))->grid();
     CompareCellPtr comp;
-    std::vector<Cell*> open_heap;
     VisibilityGrid3d::SpaceCoord vis_cell_size=vis_grid->getCellSize();
     //API::MultiGrid<float,vis_size[0],vis_size[1],vis_size[0],vis_size[1]> grid;
 
@@ -116,9 +116,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     }
 
     start->open=true;
-    grid.getCell(coord)=start;
-    open_heap.push_back(start);
-    std::push_heap(open_heap.begin(),open_heap.end(),comp);
+    //grid.getCell(coord)=start;
     Cell *best=start;
     uint count(0);
     uint iter_of_best{0};
@@ -132,60 +130,14 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
 
     uint max_iter=1600000;
     if(search2dfirst) max_iter=10000;
-    for(count=0;count<max_iter && open_heap.size();++count){
-        std::pop_heap(open_heap.begin(),open_heap.end(),comp);
-        coord = open_heap.back()->coord;
-        open_heap.pop_back();
-        //std::cout<<"Current "<<current->cost<<std::endl;
-        for (i=0;i<neighbours_number;++i)
-        {
-            Grid::ArrayCoord neigh=grid.getNeighbour(coord,i);
-            try
-            {
-                bool compute_cost=false;
-                c=grid[neigh];
-                if(!c)
-                {
-                    c=new Cell(neigh,grid.getCellCenter(neigh));
-                    c->col=0.;
-                    grid[neigh]=c;
-                    c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
-                    compute_cost=true;
-                }
-
-                if(!c->open)
-                  if(isTooFar(c,start))
-                    c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
-
-                if(!c->open)
-                {
-                  if(compute_cost)
-                      computeCost(c);
-
-                  if(c->col > best->col)
-                      c->open=true; //skip also if in collision (and we were not)
-                  else
-                  {
-                    open_heap.push_back(c);
-                    std::push_heap(open_heap.begin(),open_heap.end(),comp);
-                    c->open=true;
-                    if(c->cost < best->cost)
-                    {
-                        //Cell::CostType xx=best->cost;
-                        best = c;
-                        iter_of_best=count;
-                        //setRobots(r,h,best);
-                        //std::cout << "best: "<<best->cost<<std::endl;
-                    }
-                  }
-                }
-            }
-            catch (Grid::out_of_grid &e)
-            {
-                //that's normal, just keep on going.
-            }
-        }
+    std::atomic_uint next(0);
+    std::vector<std::future<void> > futures;
+    futures.reserve(pool.size());
+    std::mutex best_mtx;
+    for(count=0;count<pool.size();++count){
+        futures.push_back(pool.push(_computeCell4d,this,&grid, &next, start, &best, &iter_of_best,&best_mtx));
     }
+    for(auto &f : futures) f.get();
     //visibEngine->finish();
     high_resolution_clock::time_point t2 = high_resolution_clock::now();
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
@@ -241,6 +193,66 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     return best_copy;
 }
 
+void PlanningData::_computeCell4d(uint id, PlanningData *data, Grid *grid, std::atomic_uint *next, Cell *start, Cell **best, uint *iter_of_best, std::mutex *best_mtx)
+{
+    uint quantity(100);
+    while (true)
+    {
+        uint count_from = next->fetch_add(quantity); //count = next++
+        if(count_from>=grid->getNumberOfCells()) break;
+        quantity = std::min(quantity,grid->getNumberOfCells()-count_from);
+        for(uint i=0; i<quantity;++i){
+            uint count = i+count_from;
+            //M3D_TRACE("_computeCell "<<id<<" cell "<<count);
+            Grid::ArrayCoord neigh=grid->getCellCoord(count);
+            //std::cout<<"Current "<<current->cost<<std::endl;
+            try
+            {
+                bool compute_cost=false;
+                Cell *c=(*grid)[neigh];
+                //if(!c) always
+                {
+                    c=new Cell(neigh,grid->getCellCenter(neigh));
+                    c->col=0.;
+                    (*grid)[neigh]=c;
+                    c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
+                    compute_cost=true;
+                }
+
+                //if(!c->open) always
+                if(data->isTooFar(c,start))
+                    continue;
+                //c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
+
+                //if(!c->open) always because of continue above
+                {
+                    if(compute_cost)
+                        data->computeCost(c);
+                    //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+                    //    costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
+                    //    visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+                    //}
+
+                    best_mtx->lock();
+                    if(c->cost < (*best)->cost)
+                    {
+                        //Cell::CostType xx=best->cost;
+                        *best = c;
+                        *iter_of_best=count;
+                        //setRobots(r,h,best);
+                        //std::cout << "best: "<<best->cost<<std::endl;
+                    }
+                }
+                //M3D_TRACE("_computeCell "<<id<<" cell "<<count<<" "<<c->cost.toDouble()<<"\n\tbest="<<(*best)->cost.toDouble());
+                best_mtx->unlock();
+            }
+            catch (Grid::out_of_grid &e)
+            {
+                //that's normal, just keep on going.
+            }
+        }
+    }
+}
 PlanningData::Grid::ArrayCoord PlanningData::getNeighbour2dHuman(Grid::ArrayCoord coord, size_t ith_neigh){
     const unsigned int totDirections=8;
     const unsigned int dimension = 2;
@@ -626,7 +638,8 @@ PlanningData::Cost PlanningData::computeCost(Cell *c,bool ignore_agent_agent)
         col -= int(freespace_h.getCell(ah));
         col -= int(freespace_r.getCell(ar));
         if(!ignore_agent_agent)
-            col -= int(cylinderCol.moveCheck(r,Eigen::Vector3d(pr[0],pr[1],0.),h,Eigen::Vector3d(ph[0],ph[1],0.)));
+            col-=((pr-ph).squaredNorm() > (0.4+0.3)*(0.4+0.3));
+            //col -= int(cylinderCol.moveCheck(r,Eigen::Vector3d(pr[0],pr[1],0.),h,Eigen::Vector3d(ph[0],ph[1],0.)));
         else
             col-=1;
     }

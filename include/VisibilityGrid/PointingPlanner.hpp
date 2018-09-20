@@ -118,6 +118,7 @@ public:
 
 protected:
     static void _computeCell(uint id, PlanningData *data, Grid2d *grid, std::atomic_uint *next, Cell *start, Cell **best, uint *iter_of_best, std::mutex *best_mtx);
+    static void _computeCell4d(uint id, PlanningData *data, Grid *grid, std::atomic_uint *next, Cell *start, Cell **best, uint *iter_of_best, std::mutex *best_mtx);
 public:
 
     float computeStateCost(RobotState &q);
