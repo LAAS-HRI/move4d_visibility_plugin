@@ -924,7 +924,7 @@ void PlanningData::resetFromCurrentInitPos()
     balls=std::shared_ptr<Graphic::LinkedBalls2d>(new Graphic::LinkedBalls2d);
     balls->name="PointingPlanner";
 
-    initCollisionGrids();
+    //initCollisionGrids();
     API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>::SpaceCoord fromr,fromh,phyTargetPos;
     fromr[0]=start_p_r[0];
     fromr[1]=start_p_r[1];
@@ -933,13 +933,13 @@ void PlanningData::resetFromCurrentInitPos()
     phyTargetPos[0]=physicalTarget[0];
     phyTargetPos[1]=physicalTarget[1];
     try{
-        distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr));
+        distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr),max_dist);
     }catch(Grid::out_of_grid &e){
         M3D_INFO("cannot compute the dijkstra for the robot, from "<<fromr[0]<<","<<fromr[1]);
         throw e;
     }
     try{
-        distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh));
+        distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh),max_dist);
     }catch(Grid::out_of_grid &e){
         M3D_INFO("cannot compute the dijkstra for the human, from "<<fromh[0]<<","<<fromh[1]);
         throw e;
@@ -962,6 +962,7 @@ void PlanningData::resetFromCurrentInitPos()
 void PlanningData::reinit(){
     getParameters();
     try{
+    initCollisionGrids();
     resetFromCurrentInitPos();
     }catch (Grid::out_of_grid &e){
         M3D_INFO("out of grid in PlanningData::reinit, won't work for now");
