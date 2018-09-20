@@ -10,6 +10,7 @@
 
 #include "VisibilityGrid/VisibilityGrid.hpp"
 
+#include <atomic> //atomic_uint
 
 namespace move4d {
 
@@ -114,6 +115,10 @@ public:
     Eigen::Vector3d approxPerspJointPos(const Eigen::Vector2d &pos, double perspHeight) const;
     Cost computeCost(Cell *c, bool ignore_agent_agent=false /*if true ignore robot/human collision and proxemics*/);
     std::vector<float> getVisibilites(Robot *r, const Eigen::Vector2d &pos2d);
+
+protected:
+    static void _computeCell(uint id, PlanningData *data, Grid2d *grid, std::atomic_uint *next, Cell *start, Cell **best, uint *iter_of_best, std::mutex *best_mtx);
+public:
 
     float computeStateCost(RobotState &q);
 
