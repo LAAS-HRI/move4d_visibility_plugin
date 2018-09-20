@@ -63,7 +63,7 @@ void _countPixels(int id,MoveOgre::VisibilityEngine::PixelImage::ptr pixels, dou
 
 void VisibilityGridCreator::computeVisibilities(uint nb_threads)
 {
-    ctpl::thread_pool pool(10);
+    ctpl::thread_pool pool(nb_threads);
     //std::vector<std::future<void>> results(4);
     std::mutex grid_mutex;
     int pixPer90deg=API::Parameter::param<int>("VisibilityGrid/Creator/PixelPer90Deg",256);
