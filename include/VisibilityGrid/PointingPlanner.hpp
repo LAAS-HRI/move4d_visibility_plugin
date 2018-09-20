@@ -105,9 +105,10 @@ public:
     using Cost = MyCost<5,3,MyConstraints,MyCosts>;
     using Cell = MyCell<Cost>;
     using Grid = typename API::nDimGrid<Cell*,4>;
+    using Grid2d = typename API::nDimGrid<Cell*,2>;
 
     Cell run(bool read_parameters=true);
-    Cell* searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid &grid, Grid::SpaceCoord pos);
+    Cell searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid::SpaceCoord cellSize4d, std::vector<double> envSize4d, Grid::SpaceCoord pos);
     Cell *createCell(Grid::ArrayCoord coord,Grid::SpaceCoord pos);
     void setRobots(Robot *a,Robot *b, Cell *cell);
     Cost computeCost(Cell *c, bool ignore_agent_agent=false /*if true ignore robot/human collision and proxemics*/);

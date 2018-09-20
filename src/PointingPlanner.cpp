@@ -79,7 +79,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
 
     bool adjust=false;
     bool search2dfirst=SEARCH_2D_FIRST;
-    Grid grid(cell_size,adjust,envSize);
+    Grid grid;
     r=global_Project->getActiveScene()->getActiveRobot();
     assert(this->h);
     //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
@@ -87,11 +87,28 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     Grid::ArrayCoord coord;
     Cell *start;
     if(search2dfirst){
-        start = this->searchHumanPositionOnly(vis_grid,grid,pos);
-        coord = start->coord;
+        start = new Cell(this->searchHumanPositionOnly(vis_grid,cell_size,envSize,pos));
         start->col=1;
         computeCost(start);
+
+        //recompute envSize to be just around pos (related to dp (distproxemics))
+        std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
+        for(uint i=0;i<2;++i){
+            envSize0[2*i+0]=std::max<double>(start->pos[i] - dp , envSize0[2*i+0]);
+            envSize0[2*i+1]=std::min<double>(start->pos[i] + dp , envSize0[2*i+1]);
+        }
+        envSize[0]=envSize[4]=envSize0[0]; //x min
+        envSize[1]=envSize[5]=envSize0[1]; //x max
+        envSize[2]=envSize[6]=envSize0[2]; //y min
+        envSize[3]=envSize[7]=envSize0[3]; //y max
+
+        //assign grid accordingly
+        grid=Grid(cell_size,adjust,envSize);
+
+        coord = grid.getCellCoord(start->pos);
+        start->coord=coord;
     }else{
+        grid=Grid(cell_size,adjust,envSize);
         coord=grid.getCellCoord(pos);
         start=createCell(coord,grid.getCellCenter(coord));
     }
@@ -243,7 +260,12 @@ PlanningData::Grid::ArrayCoord PlanningData::getNeighbour2dHuman(Grid::ArrayCoor
     return NeighboorCoord;
 }
 
-PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid &grid, Grid::SpaceCoord pos)
+PlanningData::Grid::SpaceCoord conv2to4d(const PlanningData::Grid2d::SpaceCoord &c){ return {c[0],c[1],c[0],c[1]};}
+PlanningData::Grid::ArrayCoord conv2to4d(const PlanningData::Grid2d::ArrayCoord &c){ return {c[0],c[1],c[0],c[1]};}
+PlanningData::Grid2d::SpaceCoord conv4to2d(const PlanningData::Grid::SpaceCoord &c){ return {c[2],c[3]};}
+PlanningData::Grid2d::ArrayCoord conv4to2d(const PlanningData::Grid::ArrayCoord &c){ return {c[2],c[3]};}
+
+PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_grid, Grid::SpaceCoord cellSize4d, std::vector<double> envSize4d, Grid::SpaceCoord pos4d)
 {
     M3D_DEBUG("PointingPlanner::searchHumanPositionOnly start");
     CompareCellPtr comp;
@@ -255,13 +277,21 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
     assert(this->h);
     //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
 
-    Grid::ArrayCoord coord;
+    std::vector<double> envSize(4);
+    for(uint i=0;i<4;i++)
+        envSize[i]=envSize4d[i];
+    Grid2d::SpaceCoord cellSize{cellSize4d[0],cellSize4d[1]};
+
+    Grid2d grid(cellSize,false,envSize);
+
+    Grid2d::ArrayCoord coord;
+    Grid2d::SpaceCoord pos;
     Eigen::Vector2d from;
     for(uint i=0;i<2;++i){
-        from[i]=pos[0+i]=pos[2+i]; // PUT BOTH AGENTS AT THE HUMAN LOCATION
+        from[i]=pos[i]=pos4d[2+i]; // PUT BOTH AGENTS AT THE HUMAN LOCATION
     }
     coord=grid.getCellCoord(pos);
-    Cell *start=createCell(coord,grid.getCellCenter(coord));
+    Cell *start=createCell(conv2to4d(coord),conv2to4d(grid.getCellCenter(coord)));
     start->open=true;
     grid.getCell(coord)=start;
     open_heap.push_back(start);
@@ -270,7 +300,7 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
     uint count(0);
     uint iter_of_best{0};
 
-    unsigned int neighbours_number = 8;//grid.neighboursNumber();
+    unsigned int neighbours_number = grid.neighboursNumber();
     unsigned int i=0;
     Cell *c;
 
@@ -278,28 +308,25 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
     high_resolution_clock::time_point t1 = high_resolution_clock::now();
 
     API::nDimGrid<float,2> costGrid,visGrid;
-    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
-        costGrid=API::nDimGrid<float,2>({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
-        visGrid=API::nDimGrid<float,2>(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
-    }
+    //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+    //    costGrid=API::nDimGrid<float,2>({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
+    //    visGrid=API::nDimGrid<float,2>(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
+    //}
     for(count=0;count<160000 && open_heap.size();++count){
         std::pop_heap(open_heap.begin(),open_heap.end(),comp);
-        coord = open_heap.back()->coord;
+        coord = conv4to2d(open_heap.back()->coord);
         open_heap.pop_back();
         //std::cout<<"Current "<<current->cost<<std::endl;
         for (i=0;i<neighbours_number;++i)
         {
-            Grid::ArrayCoord neigh=this->getNeighbour2dHuman(coord,i);
-            for(uint i=0;i<2;++i){
-                neigh[0+i]=neigh[2+i]; // PUT BOTH AGENTS AT THE HUMAN LOCATION
-            }
+            Grid2d::ArrayCoord neigh=grid.getNeighbour(coord,i);
             try
             {
                 bool compute_cost=false;
-                c=grid[neigh];
+                Cell *c=grid[neigh];
                 if(!c)
                 {
-                    c=new Cell(neigh,grid.getCellCenter(neigh));
+                    c=new Cell(conv2to4d(neigh),conv2to4d(grid.getCellCenter(neigh)));
                     c->col=0.;
                     grid[neigh]=c;
                     c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
@@ -307,46 +334,46 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
                 }
 
                 if(!c->open)
-                  if(isTooFar(c,start))
-                    c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
+                    if(this->isTooFar(c,start))
+                        c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
 
                 if(!c->open)
                 {
-                  if(compute_cost)
-                      computeCost(c,true);
-                  M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
-                      costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
-                      visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
-                  }
+                    if(compute_cost)
+                        this->computeCost(c,true);
+                    //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+                    //    costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
+                    //    visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+                    //}
 
-                  if(c->col > best->col)
-                      c->open=true; //skip also if in collision (and we were not)
-                  else
-                  {
-                    open_heap.push_back(c);
-                    std::push_heap(open_heap.begin(),open_heap.end(),comp);
-                    c->open=true;
-                    if(c->cost < best->cost)
+                    if(c->col > best->col)
+                        c->open=true; //skip also if in collision (and we were not)
+                    else
                     {
-                        //Cell::CostType xx=best->cost;
-                        best = c;
-                        iter_of_best=count;
-                        //setRobots(r,h,best);
-                        //std::cout << "best: "<<best->cost<<std::endl;
+                        open_heap.push_back(c);
+                        std::push_heap(open_heap.begin(),open_heap.end(),comp);
+                        c->open=true;
+                        if(c->cost < best->cost)
+                        {
+                            //Cell::CostType xx=best->cost;
+                            best = c;
+                            iter_of_best=count;
+                            //setRobots(r,h,best);
+                            //std::cout << "best: "<<best->cost<<std::endl;
+                        }
                     }
-                  }
                 }
             }
-            catch (Grid::out_of_grid &e)
+            catch (Grid2d::out_of_grid &e)
             {
                 //that's normal, just keep on going.
             }
         }
     }
-    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
-        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dCost",costGrid,true}));
-        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dVis",visGrid,true}));
-    }
+    //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+    //    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dCost",costGrid,true}));
+    //    Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"PointingPlanner2dVis",visGrid,true}));
+    //}
     //visibEngine->finish();
     high_resolution_clock::time_point t2 = high_resolution_clock::now();
     duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
@@ -388,6 +415,11 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
     targetParam.append(targets[best->target]->getName());
     }
 
+    Cell best_copy(*best);
+    for(uint i=0;i<grid.getNumberOfCells();++i){
+        if(grid.getCell(i)) delete grid.getCell(i);
+    }
+
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
     if(!best->cost.isValid()){
@@ -395,7 +427,7 @@ PlanningData::Cell* PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_
         //throw best_copy.cost.toDouble();
     }
 
-    return best;
+    return best_copy;
 }
 
 PlanningData::Cell *PlanningData::createCell(Grid::ArrayCoord coord, Grid::SpaceCoord pos){
@@ -751,7 +783,7 @@ float PlanningData::element(const std::vector<float> &values, float factor){
 }
 
 float PlanningData::visibility(uint target_i, const Eigen::Vector3d &pos){
-    VisibilityGrid3d::SpaceCoord p{pos[0],pos[1],pos[2]};
+    VisibilityGrid3d::SpaceCoord p{float(pos[0]),float(pos[1]),float(pos[2])};
     try{
         VisibilityGrid3d::reference cell=visibilityGrid->getCell(p);
         return cell[targets[target_i]];
