@@ -269,7 +269,6 @@ PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_g
 {
     M3D_DEBUG("PointingPlanner::searchHumanPositionOnly start");
     CompareCellPtr comp;
-    std::vector<Cell*> open_heap;
     VisibilityGrid3d::SpaceCoord vis_cell_size=vis_grid->getCellSize();
 
     bool adjust=false;
@@ -294,8 +293,6 @@ PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_g
     Cell *start=createCell(conv2to4d(coord),conv2to4d(grid.getCellCenter(coord)));
     start->open=true;
     grid.getCell(coord)=start;
-    open_heap.push_back(start);
-    std::push_heap(open_heap.begin(),open_heap.end(),comp);
     Cell *best=start;
     uint count(0);
     uint iter_of_best{0};
@@ -312,62 +309,55 @@ PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_g
     //    costGrid=API::nDimGrid<float,2>({grid.getOriginCorner()[0],grid.getOriginCorner()[1]},{grid.shape()[0],grid.shape()[1]},{grid.getCellSize()[0],grid.getCellSize()[1]});
     //    visGrid=API::nDimGrid<float,2>(freespace_h.getOriginCorner(),freespace_h.shape(),freespace_h.getCellSize());
     //}
-    for(count=0;count<160000 && open_heap.size();++count){
-        std::pop_heap(open_heap.begin(),open_heap.end(),comp);
-        coord = conv4to2d(open_heap.back()->coord);
-        open_heap.pop_back();
+    for(count=0;count<grid.getNumberOfCells();++count){
+        coord = grid.getCellCoord(count);
+        Grid2d::ArrayCoord neigh=coord;
         //std::cout<<"Current "<<current->cost<<std::endl;
-        for (i=0;i<neighbours_number;++i)
+        try
         {
-            Grid2d::ArrayCoord neigh=grid.getNeighbour(coord,i);
-            try
+            bool compute_cost=false;
+            Cell *c=grid[neigh];
+            if(!c)
             {
-                bool compute_cost=false;
-                Cell *c=grid[neigh];
-                if(!c)
+                c=new Cell(conv2to4d(neigh),conv2to4d(grid.getCellCenter(neigh)));
+                c->col=0.;
+                grid[neigh]=c;
+                c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
+                compute_cost=true;
+            }
+
+            if(!c->open)
+                if(this->isTooFar(c,start))
+                    c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
+
+            if(!c->open)
+            {
+                if(compute_cost)
+                    this->computeCost(c,true);
+                //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+                //    costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
+                //    visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
+                //}
+
+                if(c->col > best->col)
+                    c->open=true; //skip also if in collision (and we were not)
+                else
                 {
-                    c=new Cell(conv2to4d(neigh),conv2to4d(grid.getCellCenter(neigh)));
-                    c->col=0.;
-                    grid[neigh]=c;
-                    c->cost.constraint(MyConstraints::COL)=std::numeric_limits<float>::infinity();
-                    compute_cost=true;
-                }
-
-                if(!c->open)
-                    if(this->isTooFar(c,start))
-                        c->open=true; //do not enter in the "if" bellow, hence ignores its neighbours
-
-                if(!c->open)
-                {
-                    if(compute_cost)
-                        this->computeCost(c,true);
-                    //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
-                    //    costGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.cost(MyCosts::COST);
-                    //    visGrid.getCell(API::nDimGrid<float,2>::ArrayCoord{neigh[0],neigh[1]})=c->cost.constraint(MyConstraints::VIS);
-                    //}
-
-                    if(c->col > best->col)
-                        c->open=true; //skip also if in collision (and we were not)
-                    else
+                    c->open=true;
+                    if(c->cost < best->cost)
                     {
-                        open_heap.push_back(c);
-                        std::push_heap(open_heap.begin(),open_heap.end(),comp);
-                        c->open=true;
-                        if(c->cost < best->cost)
-                        {
-                            //Cell::CostType xx=best->cost;
-                            best = c;
-                            iter_of_best=count;
-                            //setRobots(r,h,best);
-                            //std::cout << "best: "<<best->cost<<std::endl;
-                        }
+                        //Cell::CostType xx=best->cost;
+                        best = c;
+                        iter_of_best=count;
+                        //setRobots(r,h,best);
+                        //std::cout << "best: "<<best->cost<<std::endl;
                     }
                 }
             }
-            catch (Grid2d::out_of_grid &e)
-            {
-                //that's normal, just keep on going.
-            }
+        }
+        catch (Grid2d::out_of_grid &e)
+        {
+            //that's normal, just keep on going.
         }
     }
     //M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
@@ -672,9 +662,9 @@ std::vector<float> PlanningData::getVisibilites(Robot *r, const Eigen::Vector2d 
     try{
         VisibilityGrid3d::reference cell=visibilityGrid->getCell(pgrid);
         VisibilityGrid3d::SpaceCoord c =visibilityGrid->getCellCenter(visibilityGrid->getCellCoord(pgrid));
-        M3D_TRACE("cell "<<c[0]<<" "<<c[1]<<" "<<c[2]);
+        //M3D_TRACE("cell "<<c[0]<<" "<<c[1]<<" "<<c[2]);
         for(uint i=0;i<targets.size();++i){
-            M3D_TRACE("\t"<<targets[i]->getName()<<" "<<cell[targets[i]]);
+            //M3D_TRACE("\t"<<targets[i]->getName()<<" "<<cell[targets[i]]);
             visib.push_back(1.f-cell[targets[i]]);
         }
     }catch(VisibilityGrid3d::out_of_grid &){
