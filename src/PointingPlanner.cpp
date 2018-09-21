@@ -46,7 +46,8 @@ struct CompareCellPtr
 PlanningData::Cell PlanningData::run(bool read_parameters)
 {
     M3D_DEBUG("PointingPlanner::run start");
-    ctpl::thread_pool pool(10);
+    ctpl::thread_pool pool(global_Project->getNumberOfJobs());
+    M3D_DEBUG("will use a thread pool of "<<pool.size()<<" threads");
     ENV.setBool(Env::isRunning,true);
     if(read_parameters) getParameters();
     this->resetFromCurrentInitPos();
@@ -345,7 +346,7 @@ PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_g
     M3D_DEBUG("PointingPlanner::searchHumanPositionOnly start");
     CompareCellPtr comp;
     VisibilityGrid3d::SpaceCoord vis_cell_size=vis_grid->getCellSize();
-    ctpl::thread_pool pool(10);
+    ctpl::thread_pool pool(global_Project->getNumberOfJobs());
 
     bool adjust=false;
     r=global_Project->getActiveScene()->getActiveRobot();
