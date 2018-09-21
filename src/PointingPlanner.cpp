@@ -46,8 +46,6 @@ struct CompareCellPtr
 PlanningData::Cell PlanningData::run(bool read_parameters)
 {
     M3D_DEBUG("PointingPlanner::run start");
-    ctpl::thread_pool pool(global_Project->getNumberOfJobs());
-    M3D_DEBUG("will use a thread pool of "<<pool.size()<<" threads");
     ENV.setBool(Env::isRunning,true);
     if(read_parameters) getParameters();
     this->resetFromCurrentInitPos();
@@ -67,87 +65,95 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     Grid::SpaceCoord cell_size;
     cell_size[0]=cell_size[2]=vis_cell_size[0];
     cell_size[1]=cell_size[3]=vis_cell_size[1];
-    std::vector<double> envSize(8,0.);
-    {
-    std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
-    for(uint i=0;i<2;++i){
-        envSize0[2*i+0]=std::max(from[i] - max_dist , envSize0[2*i+0]);
-        envSize0[2*i+1]=std::min(from[i] + max_dist , envSize0[2*i+1]);
-    }
-    envSize[0]=envSize[4]=envSize0[0]; //x min
-    envSize[1]=envSize[5]=envSize0[1]; //x max
-    envSize[2]=envSize[6]=envSize0[2]; //y min
-    envSize[3]=envSize[7]=envSize0[3]; //y max
-    }
 
-    bool adjust=false;
-    bool search2dfirst=SEARCH_2D_FIRST;
     Grid grid;
-    r=global_Project->getActiveScene()->getActiveRobot();
-    assert(this->h);
-    //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
-
-    Grid::ArrayCoord coord;
-    Cell *start;
-    if(search2dfirst){
-        start = new Cell(this->searchHumanPositionOnly(vis_grid,cell_size,envSize,pos));
-        start->col=1;
-        computeCost(start);
-
-        //recompute envSize to be just around pos (related to dp (distproxemics))
-        std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
-        for(uint i=0;i<2;++i){
-            envSize0[2*i+0]=std::max<double>(start->pos[i] - dp , envSize0[2*i+0]);
-            envSize0[2*i+1]=std::min<double>(start->pos[i] + dp , envSize0[2*i+1]);
-        }
-        envSize[0]=envSize[4]=envSize0[0]; //x min
-        envSize[1]=envSize[5]=envSize0[1]; //x max
-        envSize[2]=envSize[6]=envSize0[2]; //y min
-        envSize[3]=envSize[7]=envSize0[3]; //y max
-
-        //assign grid accordingly
-        grid=Grid(cell_size,adjust,envSize);
-
-        coord = grid.getCellCoord(start->pos);
-        start->coord=coord;
-    }else{
-        grid=Grid(cell_size,adjust,envSize);
-        coord=grid.getCellCoord(pos);
-        start=createCell(coord,grid.getCellCenter(coord));
-    }
-
-    start->open=true;
-    //grid.getCell(coord)=start;
-    Cell *best=start;
-    uint count(0);
+    Cell *start,*best;
     uint iter_of_best{0};
+    if(max_dist<cell_size[0]){
+        M3D_DEBUG("not running search because max_dist<cell_size, max_dist="<<max_dist<<" cell_size.x="<<cell_size[0]);
+        best=createCell({0,0,0,0},pos);
+    }else{
+        std::vector<double> envSize(8,0.);
+        {
+            std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
+            for(uint i=0;i<2;++i){
+                envSize0[2*i+0]=std::max(from[i] - max_dist , envSize0[2*i+0]);
+                envSize0[2*i+1]=std::min(from[i] + max_dist , envSize0[2*i+1]);
+            }
+            envSize[0]=envSize[4]=envSize0[0]; //x min
+            envSize[1]=envSize[5]=envSize0[1]; //x max
+            envSize[2]=envSize[6]=envSize0[2]; //y min
+            envSize[3]=envSize[7]=envSize0[3]; //y max
+        }
 
-    unsigned int neighbours_number = grid.neighboursNumber();
-    unsigned int i=0;
-    Cell *c;
+        bool adjust=false;
+        bool search2dfirst=SEARCH_2D_FIRST;
+        r=global_Project->getActiveScene()->getActiveRobot();
+        assert(this->h);
+        //h=global_Project->getActiveScene()->getRobotByNameContaining("HUMAN");
 
-    srand (time(NULL));
-    high_resolution_clock::time_point t1 = high_resolution_clock::now();
+        Grid::ArrayCoord coord;
+        if(search2dfirst){
+            start = new Cell(this->searchHumanPositionOnly(vis_grid,cell_size,envSize,pos));
+            start->col=1;
+            computeCost(start);
 
-    uint max_iter=1600000;
-    if(search2dfirst) max_iter=10000;
-    std::atomic_uint next(0);
-    std::vector<std::future<void> > futures;
-    futures.reserve(pool.size());
-    std::mutex best_mtx;
-    for(count=0;count<pool.size();++count){
-        futures.push_back(pool.push(_computeCell4d,this,&grid, &next, start, &best, &iter_of_best,&best_mtx));
+            //recompute envSize to be just around pos (related to dp (distproxemics))
+            std::vector<double> envSize0(global_Project->getActiveScene()->getBounds());
+            for(uint i=0;i<2;++i){
+                envSize0[2*i+0]=std::max<double>(start->pos[i] - dp , envSize0[2*i+0]);
+                envSize0[2*i+1]=std::min<double>(start->pos[i] + dp , envSize0[2*i+1]);
+            }
+            envSize[0]=envSize[4]=envSize0[0]; //x min
+            envSize[1]=envSize[5]=envSize0[1]; //x max
+            envSize[2]=envSize[6]=envSize0[2]; //y min
+            envSize[3]=envSize[7]=envSize0[3]; //y max
+
+            //assign grid accordingly
+            grid=Grid(cell_size,adjust,envSize);
+
+            coord = grid.getCellCoord(start->pos);
+            start->coord=coord;
+        }else{
+            grid=Grid(cell_size,adjust,envSize);
+            coord=grid.getCellCoord(pos);
+            start=createCell(coord,grid.getCellCenter(coord));
+        }
+
+        start->open=true;
+        //grid.getCell(coord)=start;
+        best=start;
+        uint count(0);
+
+        unsigned int neighbours_number = grid.neighboursNumber();
+        unsigned int i=0;
+        Cell *c;
+
+        srand (time(NULL));
+        high_resolution_clock::time_point t1 = high_resolution_clock::now();
+
+        uint max_iter=1600000;
+        if(search2dfirst) max_iter=10000;
+        std::atomic_uint next(0);
+        std::mutex best_mtx;
+        ctpl::thread_pool pool(global_Project->getNumberOfJobs());
+        M3D_DEBUG("will use a thread pool of "<<pool.size()<<" threads");
+        std::vector<std::future<void> > futures;
+        futures.reserve(pool.size());
+        for(count=0;count<pool.size();++count){
+            futures.push_back(pool.push(_computeCell4d,this,&grid, &next, start, &best, &iter_of_best,&best_mtx));
+        }
+        for(auto &f : futures) f.get();
+        //visibEngine->finish();
+        high_resolution_clock::time_point t2 = high_resolution_clock::now();
+        duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
+
+        std::cout << "It took me " << time_span.count() << std::endl;
     }
-    for(auto &f : futures) f.get();
-    //visibEngine->finish();
-    high_resolution_clock::time_point t2 = high_resolution_clock::now();
-    duration<double> time_span = duration_cast<duration<double>>(t2 - t1);
-
-    std::cout << "It took me " << time_span.count() << std::endl;
 
     setRobots(r,h,best);
     M3D_DEBUG("done "<<best->cost.toDouble()<<" found at iteration #"<<iter_of_best
-              <<"\nit: "<<count<<" / "<<grid.getNumberOfCells()
+              //<<"\nit: "<<count<<" / "<<grid.getNumberOfCells()
               <<"\ntarget: "<<targets[best->target]->getName()
               <<"\n\tCcol="<<best->cost.constraint(MyConstraints::COL)
               <<"\n\tCvis="<<best->cost.constraint(MyConstraints::VIS)
@@ -188,7 +194,7 @@ PlanningData::Cell PlanningData::run(bool read_parameters)
     M3D_DEBUG("PointingPlanner::run end");
     if(!best_copy.cost.isValid()){
         M3D_INFO("PointingPlanner::run invalid solution");
-        //throw best_copy.cost.toDouble();
+        throw best_copy.cost.toDouble();
     }
 
     return best_copy;
@@ -443,6 +449,7 @@ PlanningData::Cell PlanningData::searchHumanPositionOnly(VisibilityGrid3d *vis_g
     for(uint i=0;i<grid.getNumberOfCells();++i){
         if(grid.getCell(i)) delete grid.getCell(i);
     }
+    delete start;
 
     ENV.setBool(Env::isRunning,false);
     M3D_DEBUG("PointingPlanner::run end");
@@ -933,30 +940,32 @@ void PlanningData::resetFromCurrentInitPos()
     fromh[1]=start_p_h[1];
     phyTargetPos[0]=physicalTarget[0];
     phyTargetPos[1]=physicalTarget[1];
-    try{
-        distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr),max_dist);
-    }catch(Grid::out_of_grid &e){
-        M3D_INFO("cannot compute the dijkstra for the robot, from "<<fromr[0]<<","<<fromr[1]);
-        throw e;
-    }
-    try{
-        distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh),max_dist);
-    }catch(Grid::out_of_grid &e){
-        M3D_INFO("cannot compute the dijkstra for the human, from "<<fromh[0]<<","<<fromh[1]);
-        throw e;
-    }
-    if(usePhysicalTarget)
-    try{
-        distGrid_physicalTarget= API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(phyTargetPos));
-    }catch(Grid::out_of_grid &e){
-        M3D_INFO("cannot compute the dijkstra to the target, from "<<phyTargetPos[0]<<","<<phyTargetPos[1]);
-        throw e;
-    }
-    M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
-        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance human",API::nDimGrid<float,2>(distGrid_h.getGrid()),true}));
-        Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance robot",API::nDimGrid<float,2>(distGrid_r.getGrid()),true}));
+    if(max_dist!=0.){
+        try{
+            distGrid_r = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_r,freespace_r.getCellCoord(fromr),max_dist);
+        }catch(Grid::out_of_grid &e){
+            M3D_INFO("cannot compute the dijkstra for the robot, from "<<fromr[0]<<","<<fromr[1]);
+            throw e;
+        }
+        try{
+            distGrid_h = API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(fromh),max_dist);
+        }catch(Grid::out_of_grid &e){
+            M3D_INFO("cannot compute the dijkstra for the human, from "<<fromh[0]<<","<<fromh[1]);
+            throw e;
+        }
         if(usePhysicalTarget)
-            Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
+            try{
+                distGrid_physicalTarget= API::ndGridAlgo::Dijkstra<API::nDimGrid<bool,2>,float>(&freespace_h,freespace_h.getCellCoord(phyTargetPos));
+            }catch(Grid::out_of_grid &e){
+                M3D_INFO("cannot compute the dijkstra to the target, from "<<phyTargetPos[0]<<","<<phyTargetPos[1]);
+                throw e;
+            }
+        M3D_IF_DEBUG_COND(Graphic::DrawablePool::getInstance()){
+            Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance human",API::nDimGrid<float,2>(distGrid_h.getGrid()),true}));
+            Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance robot",API::nDimGrid<float,2>(distGrid_r.getGrid()),true}));
+            if(usePhysicalTarget)
+                Graphic::DrawablePool::sAddGrid2Dfloat(std::shared_ptr<Graphic::Grid2Dfloat>(new Graphic::Grid2Dfloat{"distance target",API::nDimGrid<float,2>(distGrid_physicalTarget.getGrid()),true}));
+        }
     }
 }
 
